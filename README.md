@@ -5,6 +5,7 @@
 Follow these steps to set up your environment, install the required packages using `uv`, and use the `.ipynb` files in VS Code.
 
 ### Prerequisites
+
 - Python 3.9+ installed and added to your PATH
 - Visual Studio Code installed with the Python and Jupyter extensions
 - `uv` installed globally (if not, install it using `pip install uv` or `curl` as described below)
@@ -28,6 +29,7 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
 You can install `uv` and other dependencies using either `pip` or `curl`. Choose the method based on your system setup:
 
 #### Option 1: Install Using `pip`
+
 Use this method if `pip` is already installed on your system:
 
 ```pwsh
@@ -39,6 +41,7 @@ pip install jupyter notebook numpy pandas matplotlib uv
 ```
 
 #### Option 2: Install Using `curl`
+
 Use this method if `pip` is not installed or you prefer to install it manually:
 
 ```pwsh
@@ -71,6 +74,7 @@ uv sync
 5. Run the notebook cells using the `Run` button or `Shift+Enter`.
 
 ### Notes
+
 - If `uv` is not installed globally, install it first using `pip install uv` or the `curl` method described above.
 - Ensure the virtual environment is activated whenever you work on this project.
 - If notebooks cannot find packages, verify that the kernel matches the activated virtual environment.
