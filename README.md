@@ -78,3 +78,9 @@ uv sync
 - If `uv` is not installed globally, install it first using `pip install uv` or the `curl` method described above.
 - Ensure the virtual environment is activated whenever you work on this project.
 - If notebooks cannot find packages, verify that the kernel matches the activated virtual environment.
+
+### Notebooks
+
+- Started with roth_conversion_optimizer.ibynb
+- Improved with retirement_story.ipynb
+- Currently working on retirement_visual.ipynb
