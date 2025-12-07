@@ -8,13 +8,17 @@ Follow these steps to set up your environment, install the required packages usi
 
 - Python 3.9+ installed and added to your PATH
 - Visual Studio Code installed with the Python and Jupyter extensions
-- `uv` installed globally (if not, install it using `pip install uv` or `curl` as described below)
+
+- `uv` installed globally
+  - powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+  - outside of VS Code, from a terminal run "where.exe uv" to confirm the installation
+  - fully exit VS Code and restart (or the uv command will be unfindable)
 
 ### 1. Create and Activate a Virtual Environment Using `uv`
 
 ```pwsh
 # Create a virtual environment named .venv using uv
-uv venv create .venv
+uv venv .venv
 
 # Activate the virtual environment (PowerShell)
 .\.venv\Scripts\Activate.ps1
@@ -28,30 +32,6 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
 
 You can install `uv` and other dependencies using either `pip` or `curl`. Choose the method based on your system setup:
 
-#### Option 1: Install Using `pip`
-
-Use this method if `pip` is already installed on your system:
-
-```pwsh
-# Upgrade pip
-pip install --upgrade pip
-
-# Install required packages
-pip install jupyter notebook numpy pandas matplotlib uv
-```
-
-#### Option 2: Install Using `curl`
-
-Use this method if `pip` is not installed or you prefer to install it manually:
-
-```pwsh
-# Download and install pip
-curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
-python get-pip.py
-
-# Install required packages
-pip install jupyter notebook numpy pandas matplotlib uv
-```
 
 ### 3. Sync Packages Using `pyproject.toml`
 
@@ -62,7 +42,7 @@ Ensure that your `pyproject.toml` file specifies the required dependencies. Then
 uv sync
 ```
 
-### 4. Open and Run `.ipynb` Files in VS Code
+### 4. Open and Run "retirement_story" `.ipynb` Files in VS Code
 
 1. Open Visual Studio Code.
 2. Install the Python and Jupyter extensions if not already installed.
@@ -73,11 +53,7 @@ uv sync
    - Choose the interpreter located in `.venv`.
 5. Run the notebook cells using the `Run` button or `Shift+Enter`.
 
-### Notes
 
-- If `uv` is not installed globally, install it first using `pip install uv` or the `curl` method described above.
-- Ensure the virtual environment is activated whenever you work on this project.
-- If notebooks cannot find packages, verify that the kernel matches the activated virtual environment.
 
 ### Notebooks
 
