@@ -1,0 +1,58 @@
+Should I convert some or all my IRA to a Roth IRA?  
+Related questions:  If I choose to convert, WHEN should I convert and HOW MUCH should I convert each year.
+My general thoughts:
+Roth conversions pay off the longer you live, and for your heirs if they are in a tax bracket that is equal to or higher than your bracket at the time of conversion.
+Roth conversions are not a guaranteed success strategy. They can be detrimental in certain cases, e.g. you die soon after conversion, tax rates fall, the value of your Roth portfolio falls.
+Most Roth conversion planning tools do not account for the time value of money, e.g. money earned early in life is worth more than money earned later in life due to the effects of inflation.
+
+1. What is my end objective?
+a. Maximize after-tax income
+b. Maximize after-tax wealth
+c. Pass assets to heirs tax-free
+d. Avoid or minimize RMDs
+e. Avoid or minimize widow’s / widower’s penalty associated with loss of joint filing status and the lower IRMAA threshold for single filers
+2. What are my assumptions about taxable income in retirement
+a. Less than current income
+b. Equal to current income
+c. Greater than current income
+3. Are my RMDs going to be high enough to result in any of the following:
+a. Higher taxable part of Social Security Benefits (up to 85% taxable)
+b. Medicare IRMAA (currently first tier is $216K MAGI for MFJ)
+c. Net Investment Income Tax ($250K AGI for MFJ)
+4. What are my assumptions about tax rates in retirement
+a. Lower than rates at time of conversion
+b. Equal to rates at time of conversion
+c. Greater than rates at time of conversion
+5. What are my assumptions about spending / draw-down of retirement assets
+a. Less than current level of spending
+b. Equal to current level of spending
+c. Greater than current level of spending
+6. What are my assumptions about the rate of return on
+a. IRA assets
+b. Roth IRA assets
+7. What are my assumptions about inflation in retirement
+a. Less than the rate of inflation at conversion
+b. Equal to the rate of inflation at conversion
+c. Greater than the rate of inflation at conversion
+8. Will I have sufficient income / assets to meet the Roth IRA account age requirement (5 year minimum to avoid taxation of earnings)?
+9. Current age:
+a. Me
+b. My spouse
+10. Planned age at retirement
+a. Me
+b. My spouse
+11. Estimated remaining life in years – This is important because if I convert and die shortly thereafter, my heirs do not get the benefit of a long compounding period while the assets are still mine.
+a. Me
+b. My spouse
+12. How will I pay the conversion tax
+a. From pre-tax IRA funds
+b. From after tax savings
+13. What is the opportunity cost of lost earnings associated with paying the tax bill as part of the Roth conversion, compared to paying the tax bill when retirement assets are withdrawn?
+14. Do I plan to use Qualified Charitable Distributions after reaching age 70-1/2
+a. If yes, then do not convert funds expected to be used for QCDs
+15. If my objective is to pass retirement assets to my children upon our death, do I believe our children’s tax rates will be:
+a. Lower than our tax rate at time of conversion
+b. Equal to our tax rate at time of conversion
+c. Greater than our tax rate at time of conversion
+16. How do I model or account for the fact that I would plan to put high risk/high return investments in the Roth account, since the higher earnings potential would not be taxed?
+17. 
