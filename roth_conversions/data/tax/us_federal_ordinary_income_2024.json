@@ -1,0 +1,79 @@
+{
+    "metadata": {
+        "source": {
+            "title": "IRS provides tax inflation adjustments for tax year 2024",
+            "url": "https://www.irs.gov/newsroom/irs-provides-tax-inflation-adjustments-for-tax-year-2024",
+            "published": "2023-11-09"
+        },
+        "notes": "Pinned ordinary income brackets + standard deduction for tax year 2024. Extracted from IRS newsroom release (which references Rev. Proc. 2023-34)."
+    },
+    "tax_year": 2024,
+    "ordinary_income": {
+        "brackets": {
+            "MFJ": [
+                {
+                    "ceiling": 23200,
+                    "rate": 0.10
+                },
+                {
+                    "ceiling": 94300,
+                    "rate": 0.12
+                },
+                {
+                    "ceiling": 201050,
+                    "rate": 0.22
+                },
+                {
+                    "ceiling": 383900,
+                    "rate": 0.24
+                },
+                {
+                    "ceiling": 487450,
+                    "rate": 0.32
+                },
+                {
+                    "ceiling": 731200,
+                    "rate": 0.35
+                },
+                {
+                    "ceiling": null,
+                    "rate": 0.37
+                }
+            ],
+            "Single": [
+                {
+                    "ceiling": 11600,
+                    "rate": 0.10
+                },
+                {
+                    "ceiling": 47150,
+                    "rate": 0.12
+                },
+                {
+                    "ceiling": 100525,
+                    "rate": 0.22
+                },
+                {
+                    "ceiling": 191950,
+                    "rate": 0.24
+                },
+                {
+                    "ceiling": 243725,
+                    "rate": 0.32
+                },
+                {
+                    "ceiling": 609350,
+                    "rate": 0.35
+                },
+                {
+                    "ceiling": null,
+                    "rate": 0.37
+                }
+            ]
+        },
+        "standard_deduction": {
+            "MFJ": 29200,
+            "Single": 14600
+        }
+    }
+}

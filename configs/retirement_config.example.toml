@@ -40,3 +40,10 @@ inflation_rate = 0.025
 taxable_return = 0.060
 ira_return = 0.060
 roth_return = 0.070
+
+[inputs.medicare]
+irmaa_enabled = false
+
+[inputs.withdrawal_policy]
+income_tax_payment_source = "taxable"
+conversion_tax_payment_source = "taxable"

@@ -38,3 +38,14 @@ inflation_rate = 0.025
 taxable_return = 0.06
 ira_return = 0.06
 roth_return = 0.07
+
+[inputs.medicare]
+# If enabled, applies IRMAA surcharges using pinned SSA/CMS tables and a 2-year lookback MAGI approximation.
+irmaa_enabled = false
+
+[inputs.withdrawal_policy]
+# Where taxes are paid from:
+# - "taxable": pay from taxable account (respects minimum_cash_reserve; remainder from IRA)
+# - "ira": pay from IRA (grossed up using a marginal-rate approximation)
+income_tax_payment_source = "taxable"
+conversion_tax_payment_source = "taxable"

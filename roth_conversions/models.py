@@ -49,6 +49,24 @@ class ReturnAssumptions:
 
 
 @dataclass(frozen=True)
+class TaxPaymentPolicy:
+    """Policy for how taxes are paid.
+
+    Values:
+    - "taxable": pay from taxable account (respecting minimum cash reserve; remainder from IRA)
+    - "ira": pay from IRA (grossed up using a marginal-rate approximation)
+    """
+
+    income_tax_payment_source: str = "taxable"
+    conversion_tax_payment_source: str = "taxable"
+
+
+@dataclass(frozen=True)
+class MedicareInputs:
+    irmaa_enabled: bool = False
+
+
+@dataclass(frozen=True)
 class HouseholdInputs:
     household: Household
     spouse1: SpouseInputs
@@ -56,6 +74,8 @@ class HouseholdInputs:
     joint: JointAccounts
     plan: PlanInputs
     assumptions: ReturnAssumptions
+    tax_payment_policy: TaxPaymentPolicy = TaxPaymentPolicy()
+    medicare: MedicareInputs = MedicareInputs()
 
     @property
     def total_pretax(self) -> float:
@@ -110,6 +130,7 @@ class ProjectionYear:
     cumulative_conv_tax: float
     cumulative_rmd_tax: float
     cumulative_total_tax: float
+    irmaa_cost: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -123,6 +144,7 @@ class ProjectionResult:
     after_tax: float
     legacy: float
     yearly: Sequence[ProjectionYear]
+    total_irmaa_cost: float = 0.0
 
     def first_rmd(self, *, years_to_first_rmd: int) -> float:
         # If already RMD-eligible at the start year, the first RMD occurs in year 1.

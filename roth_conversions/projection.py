@@ -4,10 +4,52 @@ from typing import Optional, Sequence
 
 from .models import HouseholdInputs, ProjectionResult, ProjectionYear, Strategy, as_float_seq, clamp_series
 from .rmd import required_minimum_distribution
-from .tax import calculate_tax_mfj_2024, marginal_rate_mfj_2024
+from .social_security import taxable_social_security
+from .tax import calculate_tax_ordinary_income, marginal_rate_ordinary_income
+from .tax_tables import get_bracket_ceiling, get_standard_deduction
+from .irmaa_tables import get_irmaa_addons_monthly
 
 
 STANDARD_DEDUCTION_MFJ_APPROX_2025 = 30_000.0
+
+
+def _gross_up_for_withholding(net_tax: float, marginal_rate: float) -> float:
+    # Approximation: treat IRA withholding as a pre-tax distribution that is withheld.
+    # If marginal_rate is 24%, then withholding $24 requires a $100 distribution.
+    if net_tax <= 0:
+        return 0.0
+    r = max(0.0, min(float(marginal_rate), 0.99))
+    if r <= 0.0:
+        return float(net_tax)
+    return float(net_tax) / (1.0 - r)
+
+
+def _pay_tax(
+    *,
+    taxable: float,
+    ira: float,
+    tax_due: float,
+    source: str,
+    minimum_cash_reserve: float,
+    marginal_rate: float,
+) -> tuple[float, float]:
+    if tax_due <= 0:
+        return taxable, ira
+
+    if source == "taxable":
+        available_cash = max(0.0, float(taxable) - float(minimum_cash_reserve))
+        from_taxable = min(float(tax_due), available_cash)
+        taxable -= from_taxable
+        remaining = float(tax_due) - from_taxable
+        if remaining > 0:
+            ira -= _gross_up_for_withholding(remaining, marginal_rate)
+        return taxable, ira
+
+    if source == "ira":
+        ira -= _gross_up_for_withholding(float(tax_due), marginal_rate)
+        return taxable, ira
+
+    raise ValueError(f"unsupported tax payment source: {source!r}")
 
 
 def project_with_tax_tracking(
@@ -39,18 +81,32 @@ def project_with_tax_tracking(
     roth = float(inputs.total_roth)
     taxable = float(inputs.joint.taxable_accounts)
 
+    filing_status = str(inputs.household.tax_filing_status)
+    tax_policy = inputs.tax_payment_policy
+
     cumulative_conv_tax = 0.0
     cumulative_rmd_tax = 0.0
+    cumulative_irmaa_cost = 0.0
     total_conversions = 0.0
     total_rmds = 0.0
 
     inflation_multiplier = 1.0
     yearly: list[ProjectionYear] = []
 
+    magi_by_calendar_year: dict[int, float] = {}
+
     for yr in range(horizon_years):
         spouse1_age = int(inputs.spouse1.age) + yr
         spouse2_age = int(inputs.spouse2.age) + yr
         calendar_year = int(inputs.household.start_year) + yr
+
+        # Use pinned tax table data when available; fall back to the historical constant only
+        # if the filing status isn't supported by the pinned tables.
+        try:
+            standard_deduction = get_standard_deduction(tax_year=calendar_year, filing_status=filing_status)
+        except Exception:
+            # Backwards compatibility: old behavior assumed MFJ.
+            standard_deduction = float(standard_deduction_mfj)
 
         ira_r = float(ira_returns[yr]) if ira_returns is not None else float(inputs.assumptions.ira_return)
         roth_r = float(roth_returns[yr]) if roth_returns is not None else float(inputs.assumptions.roth_return)
@@ -61,7 +117,11 @@ def project_with_tax_tracking(
         ss1 = float(inputs.spouse1.ss_annual) if yr >= inputs.years_to_spouse1_ss else 0.0
         ss2 = float(inputs.spouse2.ss_annual) if yr >= inputs.years_to_spouse2_ss else 0.0
         total_ss = ss1 + ss2
-        ss_taxable = total_ss * 0.85
+
+        # IRMAA uses (typically) 2-year lookback MAGI; we approximate MAGI as AGI
+        # from this model (IRA withdrawals + conversions + taxable SS).
+        # We'll compute MAGI after we compute taxable SS for the final income picture.
+        irmaa_cost = 0.0
 
         income_need = float(inputs.plan.annual_income_need) * inflation_multiplier
         from_savings_needed = max(0.0, income_need - total_ss)
@@ -81,7 +141,15 @@ def project_with_tax_tracking(
         from_ira_extra = max(0.0, remaining_need - from_taxable - from_roth)
         total_ira_withdrawal = total_rmd + from_ira_extra
 
-        base_taxable_income = max(0.0, ss_taxable + total_ira_withdrawal - float(standard_deduction_mfj))
+        # Compute SS taxable using IRS provisional income rules.
+        # Note: taxable SS depends on other income (IRA withdrawals, conversions), so we
+        # compute "without conversion" and "with conversion" versions when needed.
+        ss_taxable_no_conv = taxable_social_security(
+            total_benefits=total_ss,
+            other_income=total_ira_withdrawal,
+            filing_status=filing_status,
+        )
+        base_taxable_income = max(0.0, ss_taxable_no_conv + total_ira_withdrawal - float(standard_deduction))
 
         # Conversions
         conversion = 0.0
@@ -89,9 +157,20 @@ def project_with_tax_tracking(
         if yr < int(strategy.conversion_years) and float(strategy.annual_conversion) > 0:
             available_for_conv_tax = max(0.0, taxable - float(inputs.plan.minimum_cash_reserve) - from_taxable)
 
-            bracket_24_ceiling = 383_900.0
-            bracket_32_ceiling = 487_450.0
-            room_in_brackets = max(0.0, (bracket_32_ceiling if strategy.allow_32_bracket else bracket_24_ceiling) - base_taxable_income)
+            # Constrain conversions to stay within a chosen bracket ceiling.
+            # We use pinned ceilings when available (by filing status + calendar year).
+            try:
+                bracket_24_ceiling = get_bracket_ceiling(tax_year=calendar_year, filing_status=filing_status, rate=0.24)
+                bracket_32_ceiling = get_bracket_ceiling(tax_year=calendar_year, filing_status=filing_status, rate=0.32)
+            except Exception:
+                # Backwards compatibility with notebook constants (MFJ 2024 values).
+                bracket_24_ceiling = 383_900.0
+                bracket_32_ceiling = 487_450.0
+
+            room_in_brackets = max(
+                0.0,
+                (bracket_32_ceiling if strategy.allow_32_bracket else bracket_24_ceiling) - base_taxable_income,
+            )
 
             # Notebook used 0.28 here for max_affordable
             max_affordable = (available_for_conv_tax / 0.28) if available_for_conv_tax > 0 else 0.0
@@ -99,14 +178,61 @@ def project_with_tax_tracking(
             conversion = max(0.0, conversion)
 
             if conversion > 0:
-                income_after_conv = base_taxable_income + conversion
-                conversion_tax = calculate_tax_mfj_2024(income_after_conv) - calculate_tax_mfj_2024(base_taxable_income)
+                ss_taxable_with_conv = taxable_social_security(
+                    total_benefits=total_ss,
+                    other_income=total_ira_withdrawal + conversion,
+                    filing_status=filing_status,
+                )
+                taxable_income_with_conv = max(0.0, ss_taxable_with_conv + total_ira_withdrawal + conversion - float(standard_deduction))
+                taxable_income_no_conv = max(0.0, ss_taxable_no_conv + total_ira_withdrawal - float(standard_deduction))
+
+                conversion_tax = calculate_tax_ordinary_income(
+                    taxable_income=taxable_income_with_conv,
+                    tax_year=calendar_year,
+                    filing_status=filing_status,
+                ) - calculate_tax_ordinary_income(
+                    taxable_income=taxable_income_no_conv,
+                    tax_year=calendar_year,
+                    filing_status=filing_status,
+                )
                 total_conversions += conversion
                 cumulative_conv_tax += conversion_tax
 
         # Income tax & allocate portion to RMD
-        total_taxable_income = max(0.0, ss_taxable + total_ira_withdrawal - float(standard_deduction_mfj))
-        income_tax = calculate_tax_mfj_2024(total_taxable_income)
+        # Income tax after conversion decision.
+        ss_taxable_final = taxable_social_security(
+            total_benefits=total_ss,
+            other_income=total_ira_withdrawal + conversion,
+            filing_status=filing_status,
+        )
+        total_taxable_income = max(0.0, ss_taxable_final + total_ira_withdrawal + conversion - float(standard_deduction))
+        income_tax = calculate_tax_ordinary_income(
+            taxable_income=total_taxable_income,
+            tax_year=calendar_year,
+            filing_status=filing_status,
+        )
+
+        mr_for_grossup = marginal_rate_ordinary_income(
+            taxable_income=total_taxable_income,
+            tax_year=calendar_year,
+            filing_status=filing_status,
+        )
+
+        # Persist MAGI estimate for lookback calculations.
+        magi_current_year = float(total_ira_withdrawal) + float(conversion) + float(ss_taxable_final)
+        magi_by_calendar_year[calendar_year] = magi_current_year
+
+        if bool(inputs.medicare.irmaa_enabled):
+            lookback_year = calendar_year - 2
+            lookback_magi = float(magi_by_calendar_year.get(lookback_year, magi_current_year))
+            part_b_add, part_d_add = get_irmaa_addons_monthly(
+                premium_year=calendar_year,
+                filing_status=filing_status,
+                magi=lookback_magi,
+            )
+            covered_people = 2 if filing_status == "MFJ" else 1
+            irmaa_cost = (part_b_add + part_d_add) * 12.0 * float(covered_people)
+            cumulative_irmaa_cost += irmaa_cost
 
         if total_ira_withdrawal > 0:
             rmd_share = total_rmd / total_ira_withdrawal
@@ -123,8 +249,34 @@ def project_with_tax_tracking(
         roth += conversion
         roth -= from_roth
         taxable -= from_taxable
-        taxable -= conversion_tax
-        taxable -= income_tax * 0.5  # notebook approximation
+
+        taxable, ira = _pay_tax(
+            taxable=taxable,
+            ira=ira,
+            tax_due=conversion_tax,
+            source=str(tax_policy.conversion_tax_payment_source),
+            minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+            marginal_rate=mr_for_grossup,
+        )
+        taxable, ira = _pay_tax(
+            taxable=taxable,
+            ira=ira,
+            tax_due=income_tax,
+            source=str(tax_policy.income_tax_payment_source),
+            minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+            marginal_rate=mr_for_grossup,
+        )
+
+        # Treat IRMAA as an annual expense paid from taxable (then IRA spillover).
+        if irmaa_cost > 0:
+            taxable, ira = _pay_tax(
+                taxable=taxable,
+                ira=ira,
+                tax_due=irmaa_cost,
+                source="taxable",
+                minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+                marginal_rate=mr_for_grossup,
+            )
 
         ira *= (1.0 + ira_r)
         roth *= (1.0 + roth_r)
@@ -154,6 +306,7 @@ def project_with_tax_tracking(
                 cumulative_conv_tax=cumulative_conv_tax,
                 cumulative_rmd_tax=cumulative_rmd_tax,
                 cumulative_total_tax=cumulative_total_tax,
+                irmaa_cost=irmaa_cost,
             )
         )
 
@@ -172,6 +325,7 @@ def project_with_tax_tracking(
         after_tax=after_tax,
         legacy=legacy,
         yearly=tuple(yearly),
+        total_irmaa_cost=cumulative_irmaa_cost,
     )
 
 
@@ -193,22 +347,32 @@ def project_path(
     roth = float(inputs.total_roth)
     taxable = float(inputs.joint.taxable_accounts)
 
+    filing_status = str(inputs.household.tax_filing_status)
+    tax_policy = inputs.tax_payment_policy
+
     total_conversions = 0.0
     total_conversion_tax = 0.0
     total_rmds = 0.0
     total_rmd_tax = 0.0
+    total_irmaa_cost = 0.0
 
     yearly_details: list[dict] = []
+
+    magi_by_calendar_year: dict[int, float] = {}
 
     for yr in range(horizon_years):
         spouse1_age = int(inputs.spouse1.age) + yr
         spouse2_age = int(inputs.spouse2.age) + yr
         calendar_year = int(inputs.household.start_year) + yr
 
+        try:
+            standard_deduction = get_standard_deduction(tax_year=calendar_year, filing_status=filing_status)
+        except Exception:
+            standard_deduction = float(standard_deduction_mfj)
+
         ss1 = float(inputs.spouse1.ss_annual) if yr >= inputs.years_to_spouse1_ss else 0.0
         ss2 = float(inputs.spouse2.ss_annual) if yr >= inputs.years_to_spouse2_ss else 0.0
         total_ss = ss1 + ss2
-        ss_taxable = total_ss * 0.85
 
         income_need = float(inputs.plan.annual_income_need) * (1.0 + float(inputs.assumptions.inflation_rate)) ** yr
         from_savings_needed = max(0.0, income_need - total_ss)
@@ -226,26 +390,89 @@ def project_path(
         from_ira_extra = max(0.0, remaining_need - from_taxable - from_roth)
         total_ira_withdrawal = total_rmd + from_ira_extra
 
+        ss_taxable_no_conv = taxable_social_security(
+            total_benefits=total_ss,
+            other_income=total_ira_withdrawal,
+            filing_status=filing_status,
+        )
+
         conversion = 0.0
         conversion_tax = 0.0
         if yr < int(conversion_years) and float(annual_conversion) > 0:
             available_for_conv_tax = max(0.0, taxable - float(inputs.plan.minimum_cash_reserve) - from_taxable)
 
-            base_taxable_income = max(0.0, ss_taxable + total_ira_withdrawal - float(standard_deduction_mfj))
-            mr = marginal_rate_mfj_2024(base_taxable_income)
-            room_in_24 = max(0.0, 383_900.0 - base_taxable_income)
+            base_taxable_income = max(0.0, ss_taxable_no_conv + total_ira_withdrawal - float(standard_deduction))
+            mr = marginal_rate_ordinary_income(
+                taxable_income=base_taxable_income,
+                tax_year=calendar_year,
+                filing_status=filing_status,
+            )
+
+            try:
+                ceiling_24 = get_bracket_ceiling(tax_year=calendar_year, filing_status=filing_status, rate=0.24)
+            except Exception:
+                ceiling_24 = 383_900.0
+
+            room_in_24 = max(0.0, float(ceiling_24) - base_taxable_income)
             max_affordable = available_for_conv_tax / mr if mr > 0 else 0.0
 
             conversion = min(float(annual_conversion), room_in_24, max_affordable, max(0.0, ira - total_ira_withdrawal))
             conversion = max(0.0, conversion)
 
             if conversion > 0:
-                conversion_tax = calculate_tax_mfj_2024(base_taxable_income + conversion) - calculate_tax_mfj_2024(base_taxable_income)
+                ss_taxable_with_conv = taxable_social_security(
+                    total_benefits=total_ss,
+                    other_income=total_ira_withdrawal + conversion,
+                    filing_status=filing_status,
+                )
+
+                taxable_income_with_conv = max(0.0, ss_taxable_with_conv + total_ira_withdrawal + conversion - float(standard_deduction))
+                taxable_income_no_conv = max(0.0, ss_taxable_no_conv + total_ira_withdrawal - float(standard_deduction))
+
+                conversion_tax = calculate_tax_ordinary_income(
+                    taxable_income=taxable_income_with_conv,
+                    tax_year=calendar_year,
+                    filing_status=filing_status,
+                ) - calculate_tax_ordinary_income(
+                    taxable_income=taxable_income_no_conv,
+                    tax_year=calendar_year,
+                    filing_status=filing_status,
+                )
                 total_conversions += conversion
                 total_conversion_tax += conversion_tax
 
-        total_taxable_income = max(0.0, ss_taxable + total_ira_withdrawal - float(standard_deduction_mfj))
-        income_tax = calculate_tax_mfj_2024(total_taxable_income)
+        ss_taxable_final = taxable_social_security(
+            total_benefits=total_ss,
+            other_income=total_ira_withdrawal + conversion,
+            filing_status=filing_status,
+        )
+        total_taxable_income = max(0.0, ss_taxable_final + total_ira_withdrawal + conversion - float(standard_deduction))
+        income_tax = calculate_tax_ordinary_income(
+            taxable_income=total_taxable_income,
+            tax_year=calendar_year,
+            filing_status=filing_status,
+        )
+
+        mr_for_grossup = marginal_rate_ordinary_income(
+            taxable_income=total_taxable_income,
+            tax_year=calendar_year,
+            filing_status=filing_status,
+        )
+
+        # IRMAA (Medicare premium surcharges): 2-year lookback MAGI.
+        irmaa_cost = 0.0
+        magi_current_year = float(total_ira_withdrawal) + float(conversion) + float(ss_taxable_final)
+        magi_by_calendar_year[calendar_year] = magi_current_year
+        if bool(inputs.medicare.irmaa_enabled):
+            lookback_magi = float(magi_by_calendar_year.get(calendar_year - 2, magi_current_year))
+            part_b_add, part_d_add = get_irmaa_addons_monthly(
+                premium_year=calendar_year,
+                filing_status=filing_status,
+                magi=lookback_magi,
+            )
+            covered_people = 2 if filing_status == "MFJ" else 1
+            irmaa_cost = (part_b_add + part_d_add) * 12.0 * float(covered_people)
+            total_irmaa_cost += irmaa_cost
 
         if total_ira_withdrawal > 0:
             rmd_share = total_rmd / total_ira_withdrawal
@@ -260,8 +487,33 @@ def project_path(
         roth += conversion
         roth -= from_roth
         taxable -= from_taxable
-        taxable -= conversion_tax
-        taxable -= income_tax * 0.5
+
+        taxable, ira = _pay_tax(
+            taxable=taxable,
+            ira=ira,
+            tax_due=conversion_tax,
+            source=str(tax_policy.conversion_tax_payment_source),
+            minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+            marginal_rate=mr_for_grossup,
+        )
+        taxable, ira = _pay_tax(
+            taxable=taxable,
+            ira=ira,
+            tax_due=income_tax,
+            source=str(tax_policy.income_tax_payment_source),
+            minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+            marginal_rate=mr_for_grossup,
+        )
+
+        if irmaa_cost > 0:
+            taxable, ira = _pay_tax(
+                taxable=taxable,
+                ira=ira,
+                tax_due=irmaa_cost,
+                source="taxable",
+                minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+                marginal_rate=mr_for_grossup,
+            )
 
         ira *= (1.0 + float(inputs.assumptions.ira_return))
         roth *= (1.0 + float(inputs.assumptions.roth_return))
@@ -285,6 +537,7 @@ def project_path(
                 "conversion": conversion,
                 "conversion_tax": conversion_tax,
                 "income_tax": income_tax,
+                "irmaa_cost": irmaa_cost,
                 "ira_end": ira,
                 "roth_end": roth,
                 "taxable_end": taxable,
@@ -309,6 +562,7 @@ def project_path(
         "effective_conv_rate": (total_conversion_tax / total_conversions * 100.0) if total_conversions > 0 else 0.0,
         "total_rmds": total_rmds,
         "total_rmd_tax": total_rmd_tax,
+        "total_irmaa_cost": total_irmaa_cost,
         "ira": ira,
         "roth": roth,
         "taxable": taxable,

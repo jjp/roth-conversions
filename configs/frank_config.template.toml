@@ -1,0 +1,112 @@
+# Frank-oriented config template (work-in-progress)
+#
+# Goal: provide stubbed knobs matching the feature list in `frank.md`.
+# This file is meant to be forward-compatible: you can implement features incrementally
+# while keeping the existing `retirement_config.template.toml` working unchanged.
+#
+# Usage (once implemented):
+#   uv run retirement-toolkit roth --config configs/frank_config.template.toml report --format md --out outputs/report.md
+
+[inputs.household]
+# Supported today: "MFJ" (assumed in tax engine). Future: "Single" and more.
+tax_filing_status = "MFJ"
+start_year = 2025
+
+# P0.3 Objective (make decision criteria explicit)
+# Options (proposed):
+# - "maximize_after_tax_wealth" (current behavior proxy)
+# - "maximize_legacy"
+# - "minimize_total_tax"
+# - "maximize_after_tax_income_npv" (needs discount_rate)
+objective = "maximize_after_tax_wealth"
+
+# P2.8 Time value of money (used by NPV objectives)
+# Typical values: 0.00 to 0.05
+# discount_rate = 0.03
+
+[inputs.spouse1]
+name = "Spouse 1"
+age = 70
+traditional_ira = 900000
+sep_ira = 0
+roth_ira = 50000
+ss_start_age = 70
+ss_annual = 48000
+
+[inputs.spouse2]
+name = "Spouse 2"
+age = 75
+traditional_ira = 1150000
+sep_ira = 0
+roth_ira = 100000
+ss_start_age = 68
+ss_annual = 28000
+
+[inputs.joint]
+taxable_accounts = 450000
+
+[inputs.plan]
+monthly_income_need = 10000
+minimum_cash_reserve = 75000
+
+[inputs.assumptions]
+inflation_rate = 0.025
+# Base return assumptions by account (already supported)
+taxable_return = 0.06
+ira_return = 0.06
+roth_return = 0.07
+
+# --- Proposed additional modeling knobs ---
+
+[inputs.tax]
+# P0.1 Generalize tax engine beyond MFJ 2024
+# Proposed:
+# - tax_brackets_version = "2024" (or "2025", etc.)
+# - bracket_indexing = "none" | "inflation"  (index thresholds year-over-year)
+# - standard_deduction_override = 30000
+# tax_brackets_version = "2024"
+# bracket_indexing = "none"
+# standard_deduction_override = 30000
+
+# P0.2 Social Security taxation method
+# Proposed:
+# - ss_taxation = "flat_85" (current simplification)
+# - ss_taxation = "irs_provisional_income" (realistic)
+# ss_taxation = "flat_85"
+
+# P1.5 NIIT (Net Investment Income Tax)
+# niit_enabled = false
+
+[inputs.medicare]
+# P1.4 IRMAA modeling
+# irmaa_enabled = false
+# Optional: force a specific year’s tier table
+# irmaa_table_year = 2025
+
+[inputs.events]
+# P1.6 Widow/widower penalty modeling
+# Provide either a calendar year or a year-offset; implement whichever is simpler.
+# widow_event_enabled = false
+# widow_year = 2032
+# survivor = "spouse1"  # or "spouse2"
+
+[inputs.withdrawal_policy]
+# P1.7 Explicit tax payment source (replace heuristics)
+# Supported: "taxable" | "ira"
+# income_tax_payment_source = "taxable"
+# conversion_tax_payment_source = "taxable"
+
+[inputs.qcd]
+# P2.9 Qualified Charitable Distributions
+# qcd_enabled = false
+# qcd_annual = 0
+# qcd_start_age = 70  # could also support 70.5 if you want half-year precision
+
+[inputs.heirs]
+# P3.11 Heirs tax modeling (simple starting point)
+# heir_effective_tax_rate = 0.28
+# Or: "equal_to_current" | "lower" | "higher" (if you build a scenario helper)
+
+[inputs.roth]
+# P3.12 Roth 5-year rules
+# roth_5yr_rule_enabled = false

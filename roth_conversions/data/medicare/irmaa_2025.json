@@ -1,0 +1,77 @@
+{
+    "premium_year": 2025,
+    "irmaa": {
+        "lookback_years": 2,
+        "tiers": {
+            "Single": [
+                {
+                    "magi_max": 106000,
+                    "part_b_irmaa_add_monthly": 0.0,
+                    "part_d_irmaa_add_monthly": 0.0
+                },
+                {
+                    "magi_max": 133000,
+                    "part_b_irmaa_add_monthly": 74.0,
+                    "part_d_irmaa_add_monthly": 13.7
+                },
+                {
+                    "magi_max": 167000,
+                    "part_b_irmaa_add_monthly": 185.0,
+                    "part_d_irmaa_add_monthly": 35.3
+                },
+                {
+                    "magi_max": 200000,
+                    "part_b_irmaa_add_monthly": 295.9,
+                    "part_d_irmaa_add_monthly": 57.0
+                },
+                {
+                    "magi_max": 500000,
+                    "part_b_irmaa_add_monthly": 406.9,
+                    "part_d_irmaa_add_monthly": 78.6
+                },
+                {
+                    "magi_max": null,
+                    "part_b_irmaa_add_monthly": 443.9,
+                    "part_d_irmaa_add_monthly": 85.8
+                }
+            ],
+            "MFJ": [
+                {
+                    "magi_max": 212000,
+                    "part_b_irmaa_add_monthly": 0.0,
+                    "part_d_irmaa_add_monthly": 0.0
+                },
+                {
+                    "magi_max": 266000,
+                    "part_b_irmaa_add_monthly": 74.0,
+                    "part_d_irmaa_add_monthly": 13.7
+                },
+                {
+                    "magi_max": 334000,
+                    "part_b_irmaa_add_monthly": 185.0,
+                    "part_d_irmaa_add_monthly": 35.3
+                },
+                {
+                    "magi_max": 400000,
+                    "part_b_irmaa_add_monthly": 295.9,
+                    "part_d_irmaa_add_monthly": 57.0
+                },
+                {
+                    "magi_max": 750000,
+                    "part_b_irmaa_add_monthly": 406.9,
+                    "part_d_irmaa_add_monthly": 78.6
+                },
+                {
+                    "magi_max": null,
+                    "part_b_irmaa_add_monthly": 443.9,
+                    "part_d_irmaa_add_monthly": 85.8
+                }
+            ]
+        }
+    },
+    "metadata": {
+        "source": "CMS 2025 Medicare Parts B premiums and deductibles fact sheet",
+        "source_url": "https://www.cms.gov/newsroom/fact-sheets/2025-medicare-parts-b-premiums-and-deductibles",
+        "notes": "Table stores monthly IRMAA add-ons (not total premium). Part D add-on is in addition to plan premium. Uses 2-year lookback MAGI in typical case."
+    }
+}

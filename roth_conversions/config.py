@@ -10,7 +10,16 @@ try:
 except ModuleNotFoundError:  # pragma: no cover
     tomllib = None  # type: ignore
 
-from .models import Household, HouseholdInputs, JointAccounts, PlanInputs, ReturnAssumptions, SpouseInputs
+from .models import (
+    Household,
+    HouseholdInputs,
+    JointAccounts,
+    MedicareInputs,
+    PlanInputs,
+    ReturnAssumptions,
+    SpouseInputs,
+    TaxPaymentPolicy,
+)
 
 
 def _load_toml(path: Path) -> dict[str, Any]:
@@ -42,6 +51,29 @@ def parse_inputs(cfg: dict[str, Any]) -> HouseholdInputs:
     joint = inputs.get("joint", {})
     plan = inputs.get("plan", {})
     assumptions = inputs.get("assumptions", {})
+
+    medicare = inputs.get("medicare", {})
+    medicare_inputs = MedicareInputs(
+        irmaa_enabled=bool(medicare.get("irmaa_enabled", False)),
+    )
+
+    withdrawal_policy = inputs.get("withdrawal_policy", {})
+    tax_payment_policy = TaxPaymentPolicy(
+        income_tax_payment_source=str(withdrawal_policy.get("income_tax_payment_source", "taxable")),
+        conversion_tax_payment_source=str(withdrawal_policy.get("conversion_tax_payment_source", "taxable")),
+    )
+
+    allowed_sources = {"taxable", "ira"}
+    if tax_payment_policy.income_tax_payment_source not in allowed_sources:
+        raise ValueError(
+            f"invalid inputs.withdrawal_policy.income_tax_payment_source={tax_payment_policy.income_tax_payment_source!r}; "
+            f"expected one of {sorted(allowed_sources)}"
+        )
+    if tax_payment_policy.conversion_tax_payment_source not in allowed_sources:
+        raise ValueError(
+            f"invalid inputs.withdrawal_policy.conversion_tax_payment_source={tax_payment_policy.conversion_tax_payment_source!r}; "
+            f"expected one of {sorted(allowed_sources)}"
+        )
 
     return HouseholdInputs(
         household=Household(
@@ -79,6 +111,8 @@ def parse_inputs(cfg: dict[str, Any]) -> HouseholdInputs:
             ira_return=float(assumptions["ira_return"]),
             roth_return=float(assumptions["roth_return"]),
         ),
+        tax_payment_policy=tax_payment_policy,
+        medicare=medicare_inputs,
     )
 
 
