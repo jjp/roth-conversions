@@ -94,7 +94,7 @@ dmypy.json
 .ruff_cache/
 
 # UV
-uv.lock
+# Commit uv.lock for reproducible environments
 
 # IDE
 .idea/
@@ -108,3 +108,9 @@ Thumbs.db
 
 # Project specific
 *.png
+
+# Generated outputs
+outputs/
+
+# Scratch artifacts
+_scratch_*

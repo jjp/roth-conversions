@@ -1,0 +1,40 @@
+# Template config exported from retirement_template.ipynb's default INPUTS block.
+#
+# Run the canonical CLI like:
+#   python -m retirement_toolkit.cli roth --config configs/retirement_config.template.toml three-paths
+#   python -m retirement_toolkit.cli roth --config configs/retirement_config.template.toml report --format pdf --out outputs/report.pdf
+
+[inputs.household]
+tax_filing_status = "MFJ"
+start_year = 2025
+
+[inputs.spouse1]
+name = "Spouse 1"
+age = 70
+traditional_ira = 900000
+sep_ira = 0
+roth_ira = 50000
+ss_start_age = 70
+ss_annual = 48000
+
+[inputs.spouse2]
+name = "Spouse 2"
+age = 75
+traditional_ira = 1150000
+sep_ira = 0
+roth_ira = 100000
+ss_start_age = 68
+ss_annual = 28000
+
+[inputs.joint]
+taxable_accounts = 450000
+
+[inputs.plan]
+monthly_income_need = 10000
+minimum_cash_reserve = 75000
+
+[inputs.assumptions]
+inflation_rate = 0.025
+taxable_return = 0.06
+ira_return = 0.06
+roth_return = 0.07

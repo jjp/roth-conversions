@@ -1,0 +1,57 @@
+# Template config for inputs/knobs found in retirement_story.ipynb.
+#
+# Notes
+# - This notebook currently defines many constants directly in cells (not a single INPUTS dict).
+# - This template captures the parameters that look like "inputs" (names/ages/balances, return assumptions,
+#   home purchase knobs, and Monte Carlo knobs).
+# - Your refactored library currently uses retirement_config.template.toml as the canonical HouseholdInputs
+#   format; consider this file a migration helper.
+
+[household]
+base_year = 2025
+tax_filing_status = "MFJ"
+
+[spouse1]
+name = "Rajesh"
+age = 60
+traditional_ira = 831_211
+sep_ira = 88_152
+roth_ira = 0
+ss_start_age = 70
+ss_annual = 58_860
+
+[spouse2]
+name = "Terri"
+age = 61
+traditional_ira = 1_587_530
+sep_ira = 274_116
+roth_ira = 0
+ss_start_age = 65
+ss_annual = 27_996
+
+[joint]
+taxable_accounts = 439_514
+
+[plan]
+monthly_income_need = 11_000
+minimum_cash_reserve = 75_000
+
+[assumptions]
+inflation_rate = 0.025
+stock_return = 0.08
+bond_return = 0.04
+taxable_return = 0.068
+ira_return = 0.064
+roth_return = 0.072
+
+[home_purchase]
+down_payment = 200_000
+purchase_year = 2027
+
+[monte_carlo]
+n_sims = 5000
+horizon_years = 25
+seed = 42
+stock_mean = 0.08
+stock_std = 0.18
+bond_mean = 0.04

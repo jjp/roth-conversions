@@ -1,0 +1,56 @@
+# Template config for inputs/knobs found in roth_conversion_optimizer.ipynb.
+#
+# Notes
+# - This notebook introduces additional model knobs (state tax, retirement ages, bracket targeting).
+# - It appears to contain additional optimizer/strategy-search logic beyond the current refactored library.
+#   This template captures the parameters, but the optimization engine itself may need a dedicated module.
+
+[household]
+base_year = 2025
+tax_filing_status = "MFJ"
+state_tax_rate = 0.04
+
+[spouse1]
+name = "Rajesh"
+age = 60
+retirement_age = 65
+traditional_ira = 831_211
+sep_ira = 88_152
+roth_ira = 0
+ss_start_age = 67
+ss_annual = 58_860
+
+[spouse2]
+name = "Terri"
+age = 61
+retirement_age = 65
+traditional_ira = 1_587_530
+sep_ira = 274_116
+roth_ira = 0
+ss_start_age = 65
+ss_annual = 27_996
+
+[joint]
+taxable_accounts = 439_514
+
+[income]
+current_work_income = 0
+pension_income = 0
+other_income = 0
+
+[plan]
+monthly_income_need = 11_000
+minimum_cash_reserve = 75_000
+
+[assumptions]
+inflation_rate = 0.025
+stock_return = 0.08
+bond_return = 0.04
+
+[allocations]
+taxable_allocation = [0.70, 0.30]
+ira_allocation = [0.60, 0.40]
+roth_allocation = [0.80, 0.20]
+
+[optimizer]
+target_bracket_rate = 0.22
