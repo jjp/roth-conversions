@@ -12,6 +12,8 @@ from ..analysis.three_paths import run_three_paths
 from ..models import HouseholdInputs, Strategy
 from ..objectives import pick_best_path
 from ..projection import project_with_tax_tracking
+from .. import tax_tables
+from .. import irmaa_tables
 from .models import ReportDocument, ReportSection, ReportTable
 
 
@@ -43,6 +45,7 @@ def list_default_report_sections() -> tuple[tuple[str, str], ...]:
         "Longevity Sensitivity",
         "32% Question (Breakeven)",
         "Home Purchase Scenario",
+        "Tax Inputs & Assumptions",
     )
     return tuple((_section_key(t), t) for t in titles)
 
@@ -407,6 +410,99 @@ def build_report(
                         ("Total RMD tax", _money(home.total_rmd_tax)),
                     ),
                 ),
+            ),
+        )
+    )
+
+    # --- Tax inputs appendix ---
+    start_year = int(inputs.household.start_year)
+    # The report's built-in analyses use a 25-year horizon by default.
+    report_horizon_years = 25
+    end_year = start_year + report_horizon_years - 1
+
+    resolved_tax_year_start = tax_tables.resolve_tax_year(start_year)
+    resolved_tax_year_end = tax_tables.resolve_tax_year(end_year)
+    resolved_premium_year_start = irmaa_tables.resolve_premium_year(start_year)
+    resolved_premium_year_end = irmaa_tables.resolve_premium_year(end_year)
+    irmaa_lookback_years = int(
+        irmaa_tables.load_irmaa_table(premium_year=resolved_premium_year_start)["irmaa"].get("lookback_years", 2)
+    )
+
+    rows: list[tuple[str, str]] = [
+        ("Start year (requested)", str(start_year)),
+        ("End year (requested)", str(end_year)),
+        ("Tax filing status (start)", str(inputs.household.tax_filing_status)),
+        (
+            "Ordinary income tax table year (resolved)",
+            f"start={resolved_tax_year_start}, end={resolved_tax_year_end}",
+        ),
+        (
+            "IRMAA table year (resolved)",
+            f"start={resolved_premium_year_start}, end={resolved_premium_year_end}",
+        ),
+        ("IRMAA lookback", f"{irmaa_lookback_years} years"),
+        (
+            "Tax table resolution policy",
+            "Use latest pinned year ≤ requested year",
+        ),
+        (
+            "Tax payment policy",
+            f"income_tax={inputs.tax_payment_policy.income_tax_payment_source}, conversion_tax={inputs.tax_payment_policy.conversion_tax_payment_source}",
+        ),
+        (
+            "NIIT",
+            (
+                "disabled"
+                if not bool(inputs.niit.enabled)
+                else f"enabled; realized NII ≈ taxable_return × {float(inputs.niit.nii_fraction_of_return):g} × {float(inputs.niit.realization_fraction):g}"
+            ),
+        ),
+        (
+            "Roth conversion 5-year rule",
+            (
+                "disabled"
+                if not bool(inputs.roth_rules.enabled)
+                else f"enabled; policy={inputs.roth_rules.policy}, wait_years={int(inputs.roth_rules.conversion_wait_years)}, qualified_age≈{int(inputs.roth_rules.qualified_age_years)}, penalty_rate={float(inputs.roth_rules.penalty_rate):g}"
+            ),
+        ),
+        (
+            "Charity/QCD",
+            (
+                "disabled"
+                if not bool(inputs.charity.enabled)
+                else f"enabled; annual_amount={_money(float(inputs.charity.annual_amount))}, use_qcd={bool(inputs.charity.use_qcd)}, eligible_age={int(inputs.charity.qcd_eligible_age)}, cap_per_person={_money(float(inputs.charity.qcd_annual_cap_per_person))}"
+            ),
+        ),
+        (
+            "Heirs",
+            (
+                "disabled"
+                if not bool(inputs.heirs.enabled)
+                else f"enabled; distribution_years={int(inputs.heirs.distribution_years)}, heir_tax_rate={float(inputs.heirs.heir_tax_rate):g}"
+            ),
+        ),
+        (
+            "Widow event",
+            (
+                "disabled"
+                if not bool(inputs.widow_event.enabled)
+                else f"enabled; widow_year={inputs.widow_event.widow_year}, survivor={inputs.widow_event.survivor}, income_need_multiplier={float(inputs.widow_event.income_need_multiplier):g}"
+            ),
+        ),
+        (
+            "Value basis",
+            str(inputs.reporting.value_basis),
+        ),
+    ]
+    sections.append(
+        ReportSection(
+            title="Tax Inputs & Assumptions",
+            paragraphs=(
+                "Appendix: pinned inputs and key tax-related configuration values used by this run.",
+                "This is intended to support auditability and year-over-year tax law updates.",
+            ),
+            tables=(
+                ReportTable(headers=["Item", "Value"], rows=tuple(rows)),
             ),
         )
     )
