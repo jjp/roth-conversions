@@ -56,6 +56,13 @@ roth_return = 0.07
 # If enabled, applies IRMAA surcharges using pinned SSA/CMS tables and a 2-year lookback MAGI approximation.
 irmaa_enabled = false
 
+# If enabled, applies the standard Medicare Part B base premium using pinned SSA/CMS tables.
+part_b_base_premium_enabled = false
+
+# Optional override for number of covered people used for Medicare costs (Part B base premium and IRMAA).
+# If omitted, defaults to 2 for MFJ and 1 otherwise.
+# covered_people = 2
+
 [inputs.taxes]
 # Net Investment Income Tax (NIIT): simplified model based on taxable-account investment income.
 niit_enabled = false
@@ -65,6 +72,15 @@ niit_enabled = false
 # - niit_realization_fraction: portion of that NII assumed realized each year
 niit_nii_fraction_of_return = 0.70
 niit_realization_fraction = 0.60
+
+# Simplified state income tax (planning): flat effective rate applied to a chosen base.
+state_tax_enabled = false
+state_tax_rate = 0.0
+
+# Base for state flat tax:
+# - "agi" uses the model's internal AGI/MAGI approximation
+# - "taxable_income" uses federal taxable income (after standard deduction)
+state_tax_base = "agi"
 
 [inputs.events]
 # Widow modeling: from widow_year onward, switches to Single filing status and uses survivor SS (max of two).

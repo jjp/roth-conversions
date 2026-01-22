@@ -8,6 +8,7 @@ from .social_security import taxable_social_security
 from .tax import calculate_tax_ordinary_income, marginal_rate_ordinary_income
 from .tax_tables import get_bracket_ceiling, get_standard_deduction
 from .irmaa_tables import get_irmaa_addons_monthly
+from .medicare_part_b_tables import get_part_b_base_premium_monthly
 from .withdrawal_policy import pay_tax
 from .npv import npv
 from .heirs import simulate_inherited_distribution_after_tax, simulate_inherited_roth_after_tax
@@ -58,8 +59,10 @@ def project_with_tax_tracking(
     cumulative_conv_tax = 0.0
     cumulative_rmd_tax = 0.0
     cumulative_irmaa_cost = 0.0
+    cumulative_medicare_part_b_cost = 0.0
     cumulative_niit_tax = 0.0
     cumulative_roth_penalty_tax = 0.0
+    cumulative_state_tax = 0.0
     total_conversions = 0.0
     total_rmds = 0.0
 
@@ -100,6 +103,7 @@ def project_with_tax_tracking(
         # from this model (IRA withdrawals + conversions + taxable SS).
         # We'll compute MAGI after we compute taxable SS for the final income picture.
         irmaa_cost = 0.0
+        medicare_part_b_base_cost = 0.0
 
         # NIIT: approximate net investment income (NII) from the taxable account return.
         # Important: portfolio return != NII; we approximate realized NII using configurable scalars.
@@ -246,6 +250,16 @@ def project_with_tax_tracking(
             filing_status=filing_status,
         )
 
+        state_tax = 0.0
+        if bool(getattr(inputs, "state_tax", None)) and bool(inputs.state_tax.enabled) and float(inputs.state_tax.rate) > 0:
+            base = str(getattr(inputs.state_tax, "base", "agi"))
+            # Our best available internal approximation of AGI/MAGI is:
+            # IRA withdrawals + conversions + taxable SS + (realized) investment income.
+            agi_approx = float(taxable_ira_withdrawal) + float(conversion) + float(ss_taxable_final) + float(investment_income)
+            base_amount = agi_approx if base == "agi" else float(total_taxable_income)
+            state_tax = float(inputs.state_tax.rate) * max(0.0, float(base_amount))
+            cumulative_state_tax += state_tax
+
         mr_for_grossup = marginal_rate_ordinary_income(
             taxable_income=total_taxable_income,
             tax_year=calendar_year,
@@ -268,6 +282,14 @@ def project_with_tax_tracking(
         if roth_penalty_tax > 0:
             cumulative_roth_penalty_tax += float(roth_penalty_tax)
 
+        covered_people_cfg = getattr(inputs.medicare, "covered_people", None)
+        covered_people = int(covered_people_cfg) if covered_people_cfg is not None else (2 if filing_status == "MFJ" else 1)
+
+        if bool(getattr(inputs.medicare, "part_b_base_premium_enabled", False)):
+            part_b_base = get_part_b_base_premium_monthly(premium_year=calendar_year)
+            medicare_part_b_base_cost = float(part_b_base) * 12.0 * float(covered_people)
+            cumulative_medicare_part_b_cost += medicare_part_b_base_cost
+
         if bool(inputs.medicare.irmaa_enabled):
             lookback_year = calendar_year - 2
             lookback_magi = float(magi_by_calendar_year.get(lookback_year, magi_current_year))
@@ -276,7 +298,6 @@ def project_with_tax_tracking(
                 filing_status=filing_status,
                 magi=lookback_magi,
             )
-            covered_people = 2 if filing_status == "MFJ" else 1
             irmaa_cost = (part_b_add + part_d_add) * 12.0 * float(covered_people)
             cumulative_irmaa_cost += irmaa_cost
 
@@ -288,7 +309,13 @@ def project_with_tax_tracking(
             rmd_tax = 0.0
 
         cumulative_rmd_tax += rmd_tax
-        cumulative_total_tax = cumulative_conv_tax + cumulative_rmd_tax + cumulative_niit_tax + cumulative_roth_penalty_tax
+        cumulative_total_tax = (
+            cumulative_conv_tax
+            + cumulative_rmd_tax
+            + cumulative_niit_tax
+            + cumulative_roth_penalty_tax
+            + cumulative_state_tax
+        )
 
         # Update balances
         ira -= total_ira_outflow
@@ -313,6 +340,16 @@ def project_with_tax_tracking(
             minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
             marginal_rate=mr_for_grossup,
         )
+
+        if state_tax > 0:
+            taxable, ira = pay_tax(
+                taxable=taxable,
+                ira=ira,
+                tax_due=state_tax,
+                source=str(tax_policy.income_tax_payment_source),
+                minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+                marginal_rate=mr_for_grossup,
+            )
 
         if niit_tax > 0:
             taxable, ira = pay_tax(
@@ -341,6 +378,17 @@ def project_with_tax_tracking(
                 taxable=taxable,
                 ira=ira,
                 tax_due=irmaa_cost,
+                source="taxable",
+                minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+                marginal_rate=mr_for_grossup,
+            )
+
+        # Treat Part B base premium as an annual expense paid from taxable (then IRA spillover).
+        if medicare_part_b_base_cost > 0:
+            taxable, ira = pay_tax(
+                taxable=taxable,
+                ira=ira,
+                tax_due=medicare_part_b_base_cost,
                 source="taxable",
                 minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
                 marginal_rate=mr_for_grossup,
@@ -383,6 +431,8 @@ def project_with_tax_tracking(
                 inflation_multiplier=inflation_multiplier,
                 qcd=qcd,
                 charity_need=charity_need,
+                medicare_part_b_base_premium_cost=medicare_part_b_base_cost,
+                state_tax=state_tax,
             )
         )
 
@@ -419,7 +469,9 @@ def project_with_tax_tracking(
         (
             float(y.income_tax)
             + float(y.conversion_tax)
+            + float(getattr(y, "state_tax", 0.0))
             + float(y.irmaa_cost)
+            + float(getattr(y, "medicare_part_b_base_premium_cost", 0.0))
             + float(y.niit_tax)
             + float(y.roth_penalty_tax)
         )
@@ -436,13 +488,19 @@ def project_with_tax_tracking(
         total_conv_tax=cumulative_conv_tax,
         total_rmds=total_rmds,
         total_rmd_tax=cumulative_rmd_tax,
-        total_lifetime_tax=cumulative_conv_tax + cumulative_rmd_tax + cumulative_niit_tax + cumulative_roth_penalty_tax,
+        total_lifetime_tax=cumulative_conv_tax
+        + cumulative_rmd_tax
+        + cumulative_niit_tax
+        + cumulative_roth_penalty_tax
+        + cumulative_state_tax,
         total_roth_penalty_tax=cumulative_roth_penalty_tax,
         after_tax=after_tax,
         legacy=legacy,
         yearly=tuple(yearly),
         total_irmaa_cost=cumulative_irmaa_cost,
+        total_medicare_part_b_base_premium_cost=cumulative_medicare_part_b_cost,
         total_niit_tax=cumulative_niit_tax,
+        total_state_tax=cumulative_state_tax,
         after_tax_today=after_tax_today,
         legacy_today=legacy_today,
         npv_spending_today=npv_spending_today,
@@ -483,8 +541,10 @@ def project_path(
     total_rmds = 0.0
     total_rmd_tax = 0.0
     total_irmaa_cost = 0.0
+    total_medicare_part_b_base_premium_cost = 0.0
     total_niit_tax = 0.0
     total_roth_penalty_tax = 0.0
+    total_state_tax = 0.0
 
     yearly_details: list[dict] = []
 
@@ -636,6 +696,14 @@ def project_path(
             filing_status=filing_status,
         )
 
+        state_tax = 0.0
+        if bool(getattr(inputs, "state_tax", None)) and bool(inputs.state_tax.enabled) and float(inputs.state_tax.rate) > 0:
+            base = str(getattr(inputs.state_tax, "base", "agi"))
+            agi_approx = float(taxable_ira_withdrawal) + float(conversion) + float(ss_taxable_final) + float(investment_income)
+            base_amount = agi_approx if base == "agi" else float(total_taxable_income)
+            state_tax = float(inputs.state_tax.rate) * max(0.0, float(base_amount))
+            total_state_tax += state_tax
+
         mr_for_grossup = marginal_rate_ordinary_income(
             taxable_income=total_taxable_income,
             tax_year=calendar_year,
@@ -644,8 +712,18 @@ def project_path(
 
         # IRMAA (Medicare premium surcharges): 2-year lookback MAGI.
         irmaa_cost = 0.0
+        medicare_part_b_base_cost = 0.0
         magi_current_year = float(taxable_ira_withdrawal) + float(conversion) + float(ss_taxable_final) + float(investment_income)
         magi_by_calendar_year[calendar_year] = magi_current_year
+
+        covered_people_cfg = getattr(inputs.medicare, "covered_people", None)
+        covered_people = int(covered_people_cfg) if covered_people_cfg is not None else (2 if filing_status == "MFJ" else 1)
+
+        if bool(getattr(inputs.medicare, "part_b_base_premium_enabled", False)):
+            part_b_base = get_part_b_base_premium_monthly(premium_year=calendar_year)
+            medicare_part_b_base_cost = float(part_b_base) * 12.0 * float(covered_people)
+            total_medicare_part_b_base_premium_cost += medicare_part_b_base_cost
+
         if bool(inputs.medicare.irmaa_enabled):
             lookback_magi = float(magi_by_calendar_year.get(calendar_year - 2, magi_current_year))
             part_b_add, part_d_add = get_irmaa_addons_monthly(
@@ -653,7 +731,6 @@ def project_path(
                 filing_status=filing_status,
                 magi=lookback_magi,
             )
-            covered_people = 2 if filing_status == "MFJ" else 1
             irmaa_cost = (part_b_add + part_d_add) * 12.0 * float(covered_people)
             total_irmaa_cost += irmaa_cost
 
@@ -701,6 +778,16 @@ def project_path(
             marginal_rate=mr_for_grossup,
         )
 
+        if state_tax > 0:
+            taxable, ira = pay_tax(
+                taxable=taxable,
+                ira=ira,
+                tax_due=state_tax,
+                source=str(tax_policy.income_tax_payment_source),
+                minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+                marginal_rate=mr_for_grossup,
+            )
+
         if niit_tax > 0:
             taxable, ira = pay_tax(
                 taxable=taxable,
@@ -731,6 +818,16 @@ def project_path(
                 marginal_rate=mr_for_grossup,
             )
 
+        if medicare_part_b_base_cost > 0:
+            taxable, ira = pay_tax(
+                taxable=taxable,
+                ira=ira,
+                tax_due=medicare_part_b_base_cost,
+                source="taxable",
+                minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+                marginal_rate=mr_for_grossup,
+            )
+
         ira *= (1.0 + float(inputs.assumptions.ira_return))
         roth *= (1.0 + float(inputs.assumptions.roth_return))
         taxable *= (1.0 + float(inputs.assumptions.taxable_return))
@@ -756,7 +853,9 @@ def project_path(
                 "conversion": conversion,
                 "conversion_tax": conversion_tax,
                 "income_tax": income_tax,
+                "state_tax": state_tax,
                 "irmaa_cost": irmaa_cost,
+                "medicare_part_b_base_premium_cost": medicare_part_b_base_cost,
                 "niit_tax": niit_tax,
                 "roth_penalty_tax": float(roth_penalty_tax),
                 "magi": magi_current_year,
@@ -800,7 +899,9 @@ def project_path(
         (
             float(row.get("income_tax", 0.0))
             + float(row.get("conversion_tax", 0.0))
+            + float(row.get("state_tax", 0.0))
             + float(row.get("irmaa_cost", 0.0))
+            + float(row.get("medicare_part_b_base_premium_cost", 0.0))
             + float(row.get("niit_tax", 0.0))
             + float(row.get("roth_penalty_tax", 0.0))
         )
@@ -825,8 +926,10 @@ def project_path(
         "total_rmds": total_rmds,
         "total_rmd_tax": total_rmd_tax,
         "total_irmaa_cost": total_irmaa_cost,
+        "total_medicare_part_b_base_premium_cost": total_medicare_part_b_base_premium_cost,
         "total_niit_tax": total_niit_tax,
         "total_roth_penalty_tax": total_roth_penalty_tax,
+        "total_state_tax": total_state_tax,
         "ira": ira,
         "roth": roth,
         "taxable": taxable,

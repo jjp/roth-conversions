@@ -1,6 +1,6 @@
 import unittest
 
-from roth_conversions import irmaa_tables, tax_tables
+from roth_conversions import irmaa_tables, medicare_part_b_tables, tax_tables
 
 
 class TestPinnedTaxTablesGolden(unittest.TestCase):
@@ -51,6 +51,27 @@ class TestPinnedIrmaaTablesGolden(unittest.TestCase):
         # Top tier returns the final add-ons.
         b2, d2 = irmaa_tables.get_irmaa_addons_monthly(premium_year=2026, filing_status="MFJ", magi=1_000_000_000.0)
         self.assertEqual((b2, d2), (487.0, 91.0))
+
+
+class TestPinnedMedicarePartBBasePremiumGolden(unittest.TestCase):
+    def test_part_b_premium_year_resolution_caps_to_latest_pinned(self):
+        self.assertEqual(medicare_part_b_tables.resolve_part_b_premium_year(2099), 2026)
+
+    def test_part_b_premium_year_resolution_raises_before_first_pinned(self):
+        with self.assertRaises(ValueError):
+            medicare_part_b_tables.resolve_part_b_premium_year(2024)
+
+    def test_part_b_base_premium_values(self):
+        self.assertAlmostEqual(
+            medicare_part_b_tables.get_part_b_base_premium_monthly(premium_year=2025),
+            185.0,
+            places=6,
+        )
+        self.assertAlmostEqual(
+            medicare_part_b_tables.get_part_b_base_premium_monthly(premium_year=2026),
+            202.9,
+            places=6,
+        )
 
 
 if __name__ == "__main__":

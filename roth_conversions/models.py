@@ -116,8 +116,27 @@ class TaxPaymentPolicy:
 
 
 @dataclass(frozen=True)
+class StateTaxInputs:
+    """Simplified state income tax model.
+
+    This is intentionally minimal and intended for planning comparisons.
+    - Flat effective rate applied to a chosen base.
+    - Does not model state-specific deductions/credits, AMT, reciprocity, etc.
+
+    Values:
+    - base: "agi" | "taxable_income"
+    """
+
+    enabled: bool = False
+    rate: float = 0.0
+    base: str = "agi"
+
+
+@dataclass(frozen=True)
 class MedicareInputs:
     irmaa_enabled: bool = False
+    part_b_base_premium_enabled: bool = False
+    covered_people: int | None = None
 
 
 @dataclass(frozen=True)
@@ -170,6 +189,7 @@ class HouseholdInputs:
     assumptions: ReturnAssumptions
     tax_payment_policy: TaxPaymentPolicy = TaxPaymentPolicy()
     medicare: MedicareInputs = MedicareInputs()
+    state_tax: StateTaxInputs = StateTaxInputs()
     widow_event: WidowEventInputs = WidowEventInputs()
     reporting: ReportingInputs = ReportingInputs()
     niit: NIITInputs = NIITInputs()
@@ -240,6 +260,8 @@ class ProjectionYear:
     inflation_multiplier: float = 1.0
     qcd: float = 0.0
     charity_need: float = 0.0
+    medicare_part_b_base_premium_cost: float = 0.0
+    state_tax: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -254,8 +276,10 @@ class ProjectionResult:
     legacy: float
     yearly: Sequence[ProjectionYear]
     total_irmaa_cost: float = 0.0
+    total_medicare_part_b_base_premium_cost: float = 0.0
     total_niit_tax: float = 0.0
     total_roth_penalty_tax: float = 0.0
+    total_state_tax: float = 0.0
     after_tax_today: float = 0.0
     legacy_today: float = 0.0
     npv_spending_today: float = 0.0

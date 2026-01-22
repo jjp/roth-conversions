@@ -4,6 +4,8 @@
 
 This document covers how the system estimates **Medicare IRMAA** (Income-Related Monthly Adjustment Amount) as an annual cost.
 
+Important: IRMAA is modeled here as **monthly add-ons** only. The **standard Part B base premium** (the amount everyone pays before IRMAA) is modeled separately when enabled.
+
 IRMAA affects:
 
 - Medicare Part B premium (IRMAA add-on)
@@ -16,6 +18,14 @@ IRMAA affects:
   - Loaded via `roth_conversions/irmaa_tables.py`
 - Lookup:
   - `get_irmaa_addons_monthly(premium_year, filing_status, magi) -> (part_b_add, part_d_add)`
+
+Related (base premium, optional):
+
+- Part B base premium tables:
+  - `roth_conversions/data/medicare/part_b_base_premium_*.json`
+  - Loaded via `roth_conversions/medicare_part_b_tables.py`
+- Documentation:
+  - `docs/tax/medicare_part_b_base_premium.md`
 
 ## Calculation
 

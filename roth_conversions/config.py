@@ -23,6 +23,7 @@ from .models import (
     ReportingInputs,
     RothRulesInputs,
     ReturnAssumptions,
+    StateTaxInputs,
     SpouseInputs,
     TaxPaymentPolicy,
     WidowEventInputs,
@@ -101,7 +102,11 @@ def parse_inputs(cfg: dict[str, Any]) -> HouseholdInputs:
     medicare = inputs.get("medicare", {})
     medicare_inputs = MedicareInputs(
         irmaa_enabled=bool(medicare.get("irmaa_enabled", False)),
+        part_b_base_premium_enabled=bool(medicare.get("part_b_base_premium_enabled", False)),
+        covered_people=(int(medicare["covered_people"]) if medicare.get("covered_people") is not None else None),
     )
+    if medicare_inputs.covered_people is not None and int(medicare_inputs.covered_people) <= 0:
+        raise ValueError("inputs.medicare.covered_people must be a positive integer when provided")
 
     taxes = inputs.get("taxes", {})
     niit_inputs = NIITInputs(
@@ -113,6 +118,16 @@ def parse_inputs(cfg: dict[str, Any]) -> HouseholdInputs:
         raise ValueError("inputs.taxes.niit_nii_fraction_of_return must be between 0 and 1")
     if not (0.0 <= float(niit_inputs.realization_fraction) <= 1.0):
         raise ValueError("inputs.taxes.niit_realization_fraction must be between 0 and 1")
+
+    state_tax_inputs = StateTaxInputs(
+        enabled=bool(taxes.get("state_tax_enabled", False)),
+        rate=float(taxes.get("state_tax_rate", 0.0)),
+        base=str(taxes.get("state_tax_base", "agi")),
+    )
+    if not (0.0 <= float(state_tax_inputs.rate) <= 1.0):
+        raise ValueError("inputs.taxes.state_tax_rate must be between 0 and 1")
+    if state_tax_inputs.base not in {"agi", "taxable_income"}:
+        raise ValueError("inputs.taxes.state_tax_base must be 'agi' or 'taxable_income'")
 
     roth_rules = inputs.get("roth_rules", {})
     roth_rules_inputs = RothRulesInputs(
@@ -226,6 +241,7 @@ def parse_inputs(cfg: dict[str, Any]) -> HouseholdInputs:
         ),
         tax_payment_policy=tax_payment_policy,
         medicare=medicare_inputs,
+        state_tax=state_tax_inputs,
         widow_event=widow_event,
         reporting=reporting_inputs,
         niit=niit_inputs,

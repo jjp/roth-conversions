@@ -14,6 +14,7 @@ from ..objectives import pick_best_path
 from ..projection import project_with_tax_tracking
 from .. import tax_tables
 from .. import irmaa_tables
+from .. import medicare_part_b_tables
 from .models import ReportDocument, ReportSection, ReportTable
 
 
@@ -132,6 +133,11 @@ def build_report(
         else "- Widow event: disabled"
     )
     irmaa_line = "- IRMAA: enabled (2-year lookback MAGI approximation)" if bool(inputs.medicare.irmaa_enabled) else "- IRMAA: disabled"
+    part_b_line = (
+        "- Medicare Part B base premium: enabled (pinned standard premium)"
+        if bool(getattr(inputs.medicare, "part_b_base_premium_enabled", False))
+        else "- Medicare Part B base premium: disabled"
+    )
     charity_line = (
         f"- Charity/QCD: enabled (annual_amount={_money(float(inputs.charity.annual_amount))}, use_qcd={bool(inputs.charity.use_qcd)}, qcd_eligible_age={int(inputs.charity.qcd_eligible_age)})"
         if bool(inputs.charity.enabled)
@@ -148,6 +154,12 @@ def build_report(
         else "- NIIT: disabled"
     )
 
+    state_tax_line = (
+        f"- State tax (flat): enabled (rate={float(inputs.state_tax.rate):g}, base={inputs.state_tax.base})"
+        if bool(getattr(inputs, "state_tax", None)) and bool(inputs.state_tax.enabled)
+        else "- State tax (flat): disabled"
+    )
+
     roth_rules_line = (
         f"- Roth 5-year rule (conversions): enabled (policy={inputs.roth_rules.policy}, wait_years={int(inputs.roth_rules.conversion_wait_years)}, qualified_age≈{int(inputs.roth_rules.qualified_age_years)})"
         if bool(inputs.roth_rules.enabled)
@@ -162,7 +174,9 @@ def build_report(
         f"- C − A (after-tax): {_basis_money(inputs=inputs, nominal=paths.path_c['after_tax'] - paths.path_a['after_tax'], real=float(paths.path_c.get('after_tax_today', paths.path_c['after_tax']) - float(paths.path_a.get('after_tax_today', paths.path_a['after_tax']))))}",
         widow_line,
         irmaa_line,
+        part_b_line,
         niit_line,
+        state_tax_line,
         roth_rules_line,
         charity_line,
         heirs_line,
@@ -191,7 +205,7 @@ def build_report(
             ),
             tables=(
                 ReportTable(
-                    headers=["Path", "Strategy", "After-tax wealth", "Legacy", "Heirs (after-tax)", "First RMD", "IRMAA total", "NIIT total", "Roth penalty total", "PV taxes (start-year $)"],
+                    headers=["Path", "Strategy", "After-tax wealth", "Legacy", "Heirs (after-tax)", "First RMD", "Medicare base (Part B)", "IRMAA add-ons", "State tax", "NIIT total", "Roth penalty total", "PV taxes (start-year $)"],
                     rows=(
                         (
                             "A",
@@ -200,7 +214,9 @@ def build_report(
                             _basis_money(inputs=inputs, nominal=float(paths.path_a["legacy"]), real=float(paths.path_a.get("legacy_today", paths.path_a["legacy"]))),
                             _basis_money(inputs=inputs, nominal=float(paths.path_a.get("heirs_after_tax", 0.0)), real=float(paths.path_a.get("heirs_after_tax_today", paths.path_a.get("heirs_after_tax", 0.0)))),
                             _money(paths.path_a["first_rmd"]),
+                            _money(float(paths.path_a.get("total_medicare_part_b_base_premium_cost", 0.0))),
                             _money(float(paths.path_a.get("total_irmaa_cost", 0.0))),
+                            _money(float(paths.path_a.get("total_state_tax", 0.0))),
                             _money(float(paths.path_a.get("total_niit_tax", 0.0))),
                             _money(float(paths.path_a.get("total_roth_penalty_tax", 0.0))),
                             _money(float(paths.path_a.get("npv_taxes_today", 0.0))),
@@ -212,7 +228,9 @@ def build_report(
                             _basis_money(inputs=inputs, nominal=float(paths.path_b["legacy"]), real=float(paths.path_b.get("legacy_today", paths.path_b["legacy"]))),
                             _basis_money(inputs=inputs, nominal=float(paths.path_b.get("heirs_after_tax", 0.0)), real=float(paths.path_b.get("heirs_after_tax_today", paths.path_b.get("heirs_after_tax", 0.0)))),
                             _money(paths.path_b["first_rmd"]),
+                            _money(float(paths.path_b.get("total_medicare_part_b_base_premium_cost", 0.0))),
                             _money(float(paths.path_b.get("total_irmaa_cost", 0.0))),
+                            _money(float(paths.path_b.get("total_state_tax", 0.0))),
                             _money(float(paths.path_b.get("total_niit_tax", 0.0))),
                             _money(float(paths.path_b.get("total_roth_penalty_tax", 0.0))),
                             _money(float(paths.path_b.get("npv_taxes_today", 0.0))),
@@ -224,7 +242,9 @@ def build_report(
                             _basis_money(inputs=inputs, nominal=float(paths.path_c["legacy"]), real=float(paths.path_c.get("legacy_today", paths.path_c["legacy"]))),
                             _basis_money(inputs=inputs, nominal=float(paths.path_c.get("heirs_after_tax", 0.0)), real=float(paths.path_c.get("heirs_after_tax_today", paths.path_c.get("heirs_after_tax", 0.0)))),
                             _money(paths.path_c["first_rmd"]),
+                            _money(float(paths.path_c.get("total_medicare_part_b_base_premium_cost", 0.0))),
                             _money(float(paths.path_c.get("total_irmaa_cost", 0.0))),
+                            _money(float(paths.path_c.get("total_state_tax", 0.0))),
                             _money(float(paths.path_c.get("total_niit_tax", 0.0))),
                             _money(float(paths.path_c.get("total_roth_penalty_tax", 0.0))),
                             _money(float(paths.path_c.get("npv_taxes_today", 0.0))),
@@ -424,6 +444,8 @@ def build_report(
     resolved_tax_year_end = tax_tables.resolve_tax_year(end_year)
     resolved_premium_year_start = irmaa_tables.resolve_premium_year(start_year)
     resolved_premium_year_end = irmaa_tables.resolve_premium_year(end_year)
+    resolved_part_b_year_start = medicare_part_b_tables.resolve_part_b_premium_year(start_year)
+    resolved_part_b_year_end = medicare_part_b_tables.resolve_part_b_premium_year(end_year)
     irmaa_lookback_years = int(
         irmaa_tables.load_irmaa_table(premium_year=resolved_premium_year_start)["irmaa"].get("lookback_years", 2)
     )
@@ -440,6 +462,10 @@ def build_report(
             "IRMAA table year (resolved)",
             f"start={resolved_premium_year_start}, end={resolved_premium_year_end}",
         ),
+        (
+            "Medicare Part B base premium year (resolved)",
+            f"start={resolved_part_b_year_start}, end={resolved_part_b_year_end}",
+        ),
         ("IRMAA lookback", f"{irmaa_lookback_years} years"),
         (
             "Tax table resolution policy",
@@ -455,6 +481,14 @@ def build_report(
                 "disabled"
                 if not bool(inputs.niit.enabled)
                 else f"enabled; realized NII ≈ taxable_return × {float(inputs.niit.nii_fraction_of_return):g} × {float(inputs.niit.realization_fraction):g}"
+            ),
+        ),
+        (
+            "State tax (flat)",
+            (
+                "disabled"
+                if not bool(getattr(inputs, "state_tax", None)) or not bool(inputs.state_tax.enabled)
+                else f"enabled; rate={float(inputs.state_tax.rate):g}, base={inputs.state_tax.base}"
             ),
         ),
         (

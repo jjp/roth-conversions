@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from ..models import HouseholdInputs
 from ..roth_rules import RothLedger
 from ..irmaa_tables import get_irmaa_addons_monthly
+from ..medicare_part_b_tables import get_part_b_base_premium_monthly
 from ..rmd import required_minimum_distribution
 from ..social_security import taxable_social_security
 from ..tax import calculate_tax_ordinary_income, marginal_rate_ordinary_income
@@ -21,6 +22,8 @@ class HomePurchaseScenario:
     total_rmds: float
     total_rmd_tax: float
     total_irmaa_cost: float
+    total_medicare_part_b_base_premium_cost: float
+    total_state_tax: float
     after_tax: float
     legacy: float
     yearly_data: tuple[dict, ...]
@@ -55,6 +58,8 @@ def project_with_home_purchase(
     total_rmds = 0.0
     total_rmd_tax = 0.0
     total_irmaa_cost = 0.0
+    total_medicare_part_b_base_premium_cost = 0.0
+    total_state_tax = 0.0
 
     magi_by_calendar_year: dict[int, float] = {}
 
@@ -301,10 +306,20 @@ def project_with_home_purchase(
             realization = float(getattr(inputs.niit, "realization_fraction", 0.60))
             investment_income = max(0.0, taxable_balance_for_nii * float(inputs.assumptions.taxable_return) * nii_fraction * realization)
 
-        # IRMAA (optional).
+        # Medicare costs (base Part B premium + IRMAA add-ons).
         irmaa_cost = 0.0
+        medicare_part_b_base_cost = 0.0
         magi_current_year = float(taxable_ira_withdrawal) + float(conversion) + float(ss_taxable_final) + float(investment_income)
         magi_by_calendar_year[calendar_year] = magi_current_year
+
+        covered_people_cfg = getattr(inputs.medicare, "covered_people", None)
+        covered_people = int(covered_people_cfg) if covered_people_cfg is not None else (2 if filing_status == "MFJ" else 1)
+
+        if bool(getattr(inputs.medicare, "part_b_base_premium_enabled", False)):
+            part_b_base = get_part_b_base_premium_monthly(premium_year=calendar_year)
+            medicare_part_b_base_cost = float(part_b_base) * 12.0 * float(covered_people)
+            total_medicare_part_b_base_premium_cost += medicare_part_b_base_cost
+
         if bool(inputs.medicare.irmaa_enabled):
             lookback_magi = float(magi_by_calendar_year.get(calendar_year - 2, magi_current_year))
             part_b_add, part_d_add = get_irmaa_addons_monthly(
@@ -312,9 +327,15 @@ def project_with_home_purchase(
                 filing_status=filing_status,
                 magi=lookback_magi,
             )
-            covered_people = 2 if filing_status == "MFJ" else 1
             irmaa_cost = (part_b_add + part_d_add) * 12.0 * float(covered_people)
             total_irmaa_cost += irmaa_cost
+
+        state_tax = 0.0
+        if bool(getattr(inputs, "state_tax", None)) and bool(inputs.state_tax.enabled) and float(inputs.state_tax.rate) > 0:
+            base = str(getattr(inputs.state_tax, "base", "agi"))
+            base_amount = magi_current_year if base == "agi" else float(total_taxable_income)
+            state_tax = float(inputs.state_tax.rate) * max(0.0, float(base_amount))
+            total_state_tax += state_tax
 
         niit_tax = 0.0
         if bool(getattr(inputs, "niit", None)) and bool(inputs.niit.enabled):
@@ -354,6 +375,15 @@ def project_with_home_purchase(
             minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
             marginal_rate=mr_for_grossup,
         )
+        if state_tax > 0:
+            taxable, ira = pay_tax(
+                taxable=taxable,
+                ira=ira,
+                tax_due=state_tax,
+                source=str(tax_policy.income_tax_payment_source),
+                minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+                marginal_rate=mr_for_grossup,
+            )
         if niit_tax > 0:
             taxable, ira = pay_tax(
                 taxable=taxable,
@@ -368,6 +398,16 @@ def project_with_home_purchase(
                 taxable=taxable,
                 ira=ira,
                 tax_due=irmaa_cost,
+                source="taxable",
+                minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+                marginal_rate=mr_for_grossup,
+            )
+
+        if medicare_part_b_base_cost > 0:
+            taxable, ira = pay_tax(
+                taxable=taxable,
+                ira=ira,
+                tax_due=medicare_part_b_base_cost,
                 source="taxable",
                 minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
                 marginal_rate=mr_for_grossup,
@@ -388,7 +428,9 @@ def project_with_home_purchase(
         year["conversion"] = conversion
         year["conv_tax"] = conversion_tax
         year["income_tax"] = income_tax
+        year["state_tax"] = state_tax
         year["irmaa_cost"] = irmaa_cost
+        year["medicare_part_b_base_premium_cost"] = medicare_part_b_base_cost
         year["niit_tax"] = niit_tax
         year["roth_penalty_tax"] = float(roth_penalty_tax)
         year["magi"] = magi_current_year
@@ -415,6 +457,8 @@ def project_with_home_purchase(
         total_rmds=total_rmds,
         total_rmd_tax=total_rmd_tax,
         total_irmaa_cost=total_irmaa_cost,
+        total_medicare_part_b_base_premium_cost=total_medicare_part_b_base_premium_cost,
+        total_state_tax=total_state_tax,
         after_tax=after_tax,
         legacy=legacy,
         yearly_data=tuple(yearly_data),

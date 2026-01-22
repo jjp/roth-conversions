@@ -1,0 +1,11 @@
+{
+    "premium_year": 2026,
+    "part_b": {
+        "base_premium_monthly": 202.9
+    },
+    "metadata": {
+        "source": "SSA Medicare premiums (2026)",
+        "source_url": "https://www.ssa.gov/benefits/medicare/medicare-premiums.html",
+        "notes": "Pinned standard (base) Part B monthly premium for planning. Late enrollment penalties and special cases are not modeled."
+    }
+}

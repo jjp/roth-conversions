@@ -16,17 +16,21 @@ This is not a full tax-prep system and does not attempt to produce an IRS-file-r
 - Federal ordinary income tax using pinned brackets + standard deduction
 - Social Security taxation (provisional income)
 - RMDs (simplified)
+- Medicare Part B base premiums (pinned standard premium; simplified enrollment assumptions)
 - IRMAA (pinned tiers, simplified MAGI and lookback behavior)
 - NIIT (with NII approximation knobs)
+- Optional simplified state income tax (flat effective rate on AGI or taxable income)
 - Optional QCD, heirs modeling, widow event, Roth 5-year rule approximation
 
 ## Major exclusions (not modeled)
 
-- State income taxes and state-specific retirement rules
+Ordered roughly by likely impact on IRA/Roth/RMD planning decisions (conversion “room”, marginal rates, MAGI-driven effects):
+
 - Preferential capital gains / qualified dividends tax rates
 - Itemized deductions, credits, AMT
-- Medicare base premiums (only IRMAA add-ons are modeled)
+- State-specific retirement rules and detailed state tax law (only a simplified flat state tax is available)
 - Detailed investment tax mechanics (dividend yield, turnover, tax-loss harvesting)
+- Medicare enrollment timing, Part B late-enrollment penalties, and plan-specific Part D premium mechanics
 - Precise Roth contribution/earnings ordering and all penalty exceptions
 - Estate tax
 
