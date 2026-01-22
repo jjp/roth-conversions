@@ -9,6 +9,10 @@
 [inputs.household]
 tax_filing_status = "MFJ"
 start_year = 2025
+discount_rate = 0.0
+
+[inputs.reporting]
+value_basis = "nominal"
 
 [inputs.spouse1]
 name = "Spouse 1"
@@ -44,6 +48,24 @@ roth_return = 0.070
 [inputs.medicare]
 irmaa_enabled = false
 
+[inputs.events]
+widow_event_enabled = false
+# widow_year = 2032
+# survivor = "spouse1"
+# income_need_multiplier = 1.0
+
 [inputs.withdrawal_policy]
 income_tax_payment_source = "taxable"
 conversion_tax_payment_source = "taxable"
+
+[inputs.charity]
+enabled = false
+annual_amount = 0.0
+use_qcd = true
+qcd_eligible_age = 71
+qcd_annual_cap_per_person = 100000.0
+
+[inputs.heirs]
+enabled = false
+distribution_years = 10
+heir_tax_rate = 0.30

@@ -30,13 +30,19 @@ Frank’s note is a decision framework, not a bug list. The “features” it im
   - Loader: `roth_conversions/tax_tables.py`
 - Social Security taxable benefits now use the **provisional income** method (instead of “always 85% taxable”).
   - See `roth_conversions/social_security.py` and usage in `roth_conversions/projection.py`.
-- No IRMAA, no NIIT, no widow/widower filing-status change, no QCD handling.
+- No NIIT handling yet.
 - “After-tax wealth” / “legacy” are heuristics (e.g., `ira * 0.75`, `taxable * 0.92`, `ira * (1-0.28)`), not a modeled tax event.
-- Time value of money is not modeled (no discounting / NPV objective).
+- Time value of money is now supported (basic): discount rate + PV of spending/taxes and real vs nominal output basis.
 
 ---
 
 ## Feature list + importance (do these in order)
+
+## Current status (quick check)
+
+✅ Done (basic): P0.1, P0.2, P1.4, P1.6, P1.7, P2.8, P2.9, P3.11
+
+⏳ Not done yet: P0.3 (objectives), P1.5 (NIIT), P2.10 (longevity sensitivity), P3.12 (Roth conversion 5-year rule tracking), P3.13 (asset location scenarios/reporting)
 
 ### P0 — Foundation (high importance; unblock everything else)
 
@@ -88,6 +94,7 @@ Frank’s note is a decision framework, not a bug list. The “features” it im
 ### P1 — High-impact realism (still high importance)
 
 4. **Model Medicare IRMAA as an explicit cost**
+✅ Done (basic)
 
 - **Why**: Frank calls this out as a key Roth conversion risk; conversions can spike MAGI and trigger IRMAA tiers.
 - **Scope**:
@@ -113,7 +120,7 @@ Frank’s note is a decision framework, not a bug list. The “features” it im
 - **Acceptance**:
   - High-income scenario triggers NIIT; low-income does not.
 
-6. **Widow/Widower penalty: filing status transition + threshold changes**
+6. **Widow/Widower penalty: filing status transition + threshold changes** ✅ Done (basic)
 
 - **Why**: Frank highlights this explicitly; it’s a core motivator for “pre-paying” tax via conversions.
 - **Scope**:
@@ -125,6 +132,7 @@ Frank’s note is a decision framework, not a bug list. The “features” it im
   - `roth_conversions/projection.py`
 - **Acceptance**:
   - A/B/C results change meaningfully when widow event is enabled.
+  - From `widow_year` onward: filing status is `Single` and SS income uses survivor benefit (max of two).
 
 7. **How conversion tax is paid (taxable vs IRA)** ✅ Done
 
@@ -142,7 +150,7 @@ Frank’s note is a decision framework, not a bug list. The “features” it im
 
 ### P2 — Decision-quality improvements (medium importance)
 
-8. **Time value of money: NPV (discounted) objectives**
+8. **Time value of money: NPV (discounted) objectives** ✅ Done (basic)
 
 - **Why**: Frank calls out that most tools ignore this.
 - **Scope**:
@@ -156,6 +164,7 @@ Frank’s note is a decision framework, not a bug list. The “features” it im
   - `maximize_after_tax_income_npv` prefers earlier cash flows when discount_rate > 0.
 
 9. **QCD support (age 70½+)**
+✅ Done (basic)
 
 - **Why**: Frank’s guidance: don’t convert dollars you’ll later QCD.
 - **Scope**:
@@ -181,15 +190,23 @@ Frank’s note is a decision framework, not a bug list. The “features” it im
 
 ### P3 — Advanced / nice-to-have (lower importance unless your use-case demands it)
 
-11. **Heirs’ tax modeling (10‑year inherited IRA rule, heirs’ bracket)**
+11. **Heirs’ tax modeling (5-year + 10‑year inherited IRA rules, heirs’ bracket)**
+✅ Done (basic)
 
 - **Why**: Frank asks about heirs in equal/higher brackets.
 - **Scope**:
-  - Add config: `heir_effective_tax_rate` (simple) OR a distribution schedule over 10 years.
+  - Add config: `distribution_years = 5|10` + `heir_tax_rate` (simple flat effective rate).
+  - Model inherited IRA withdrawals over the rule window and apply heir tax rate.
+  - Treat inherited Roth as tax-free but still distributed within the rule window.
   - Replace current `legacy` heuristic with a modeled “after-tax to heirs.”
 - **Likely files**:
   - `roth_conversions/projection.py` (end-of-horizon estate event)
   - Reporting.
+
+**Implementation notes (first-pass / “basic” expectations):**
+
+- QCD eligibility is modeled using whole-year ages (approximation of the 70½ rule).
+- Heirs modeling is deliberately simplified (flat effective tax rate; equal annual distributions; reinvest proceeds in taxable).
 
 12. **Roth 5-year rule tracking**
 
@@ -216,10 +233,13 @@ Frank’s note is a decision framework, not a bug list. The “features” it im
 2. P0.2 SS taxation formula
 3. P1.7 explicit tax payment source (remove heuristics) ✅ Done
 4. P1.4 IRMAA ✅ Done (basic: pinned tiers + 2-year lookback)
-5. P1.6 widow penalty
-6. P2.8 NPV/time value of money
-7. P2.9 QCD
-8. P3 heirs + 5-year rules as needed
+5. P1.6 widow penalty ✅ Done (basic)
+6. P2.8 NPV + real vs nominal dollars ✅ Done (basic)
+7. P2.9 QCD ✅ Done (basic)
+8. P3.11 Heirs (5-year/10-year) ✅ Done (basic)
+9. P0.3 objectives + report them (next)
+10. P1.5 NIIT (next)
+11. P2.10 longevity sensitivity (optional)
 
 ## Notes on config additions (where to extend)
 

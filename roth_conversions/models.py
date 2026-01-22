@@ -23,6 +23,12 @@ class SpouseInputs:
 class Household:
     tax_filing_status: str = "MFJ"
     start_year: int = 2025
+    discount_rate: float = 0.0
+
+
+@dataclass(frozen=True)
+class ReportingInputs:
+    value_basis: str = "nominal"  # "nominal" | "real" (start-year dollars)
 
 
 @dataclass(frozen=True)
@@ -67,6 +73,46 @@ class MedicareInputs:
 
 
 @dataclass(frozen=True)
+class WidowEventInputs:
+    enabled: bool = False
+    widow_year: int | None = None
+    survivor: str = "spouse1"  # "spouse1" | "spouse2" (informational; SS uses max benefit)
+    income_need_multiplier: float = 1.0
+
+
+@dataclass(frozen=True)
+class CharitableGivingInputs:
+    """Charitable giving and QCD (Qualified Charitable Distribution) assumptions.
+
+    Notes:
+    - This model uses whole-year ages. The real-world QCD eligibility is age 70½; we approximate
+      with a configurable whole-year threshold (default 71).
+    - QCD reduces taxable income / MAGI (excluded from AGI) while still reducing IRA balance.
+    """
+
+    enabled: bool = False
+    annual_amount: float = 0.0  # start-year dollars
+    use_qcd: bool = True
+    qcd_eligible_age: int = 71
+    qcd_annual_cap_per_person: float = 100_000.0
+
+
+@dataclass(frozen=True)
+class HeirsInputs:
+    """Heir modeling assumptions for inherited accounts.
+
+    This is a simplified model intended for strategy comparisons:
+    - inherited IRA/Roth must be distributed within `distribution_years`
+    - IRA distributions are taxed at `heir_tax_rate` (flat effective rate)
+    - after-tax proceeds are assumed to be reinvested in a taxable account
+    """
+
+    enabled: bool = False
+    distribution_years: int = 10  # common values: 5 or 10
+    heir_tax_rate: float = 0.30
+
+
+@dataclass(frozen=True)
 class HouseholdInputs:
     household: Household
     spouse1: SpouseInputs
@@ -76,6 +122,10 @@ class HouseholdInputs:
     assumptions: ReturnAssumptions
     tax_payment_policy: TaxPaymentPolicy = TaxPaymentPolicy()
     medicare: MedicareInputs = MedicareInputs()
+    widow_event: WidowEventInputs = WidowEventInputs()
+    reporting: ReportingInputs = ReportingInputs()
+    charity: CharitableGivingInputs = CharitableGivingInputs()
+    heirs: HeirsInputs = HeirsInputs()
 
     @property
     def total_pretax(self) -> float:
@@ -131,6 +181,10 @@ class ProjectionYear:
     cumulative_rmd_tax: float
     cumulative_total_tax: float
     irmaa_cost: float = 0.0
+    income_need: float = 0.0
+    inflation_multiplier: float = 1.0
+    qcd: float = 0.0
+    charity_need: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -145,6 +199,12 @@ class ProjectionResult:
     legacy: float
     yearly: Sequence[ProjectionYear]
     total_irmaa_cost: float = 0.0
+    after_tax_today: float = 0.0
+    legacy_today: float = 0.0
+    npv_spending_today: float = 0.0
+    npv_taxes_today: float = 0.0
+    heirs_after_tax: float = 0.0
+    heirs_after_tax_today: float = 0.0
 
     def first_rmd(self, *, years_to_first_rmd: int) -> float:
         # If already RMD-eligible at the start year, the first RMD occurs in year 1.

@@ -9,11 +9,17 @@ from ..analysis.bracket32 import find_tax_breakeven_year
 from ..analysis.home_purchase import project_with_home_purchase
 from ..analysis.three_paths import run_three_paths
 from ..models import HouseholdInputs, Strategy
+from ..projection import project_with_tax_tracking
 from .models import ReportDocument, ReportSection, ReportTable
 
 
 def _money(x: float) -> str:
     return f"${x:,.0f}"
+
+
+def _basis_money(*, inputs: HouseholdInputs, nominal: float, real: float) -> str:
+    basis = str(inputs.reporting.value_basis)
+    return _money(real if basis == "real" else nominal)
 
 
 def _section_key(title: str) -> str:
@@ -103,13 +109,44 @@ def build_report(
         ("C", paths.path_c),
     ]
     best_label, best_path = max(path_rows, key=lambda r: float(r[1]["after_tax"]))
+
+    # One representative run to surface PV metrics (strategy doesn't matter for spend PV; taxes do).
+    # We use a conservative strategy to keep the values stable.
+    pv_result = project_with_tax_tracking(
+        inputs=inputs,
+        strategy=Strategy("PV", annual_conversion=0.0, conversion_years=0, allow_32_bracket=False),
+        horizon_years=25,
+    )
+    widow_line = (
+        f"- Widow event: enabled (widow_year={inputs.widow_event.widow_year}, income_need_multiplier={inputs.widow_event.income_need_multiplier:g})"
+        if bool(inputs.widow_event.enabled)
+        else "- Widow event: disabled"
+    )
+    irmaa_line = "- IRMAA: enabled (2-year lookback MAGI approximation)" if bool(inputs.medicare.irmaa_enabled) else "- IRMAA: disabled"
+    charity_line = (
+        f"- Charity/QCD: enabled (annual_amount={_money(float(inputs.charity.annual_amount))}, use_qcd={bool(inputs.charity.use_qcd)}, qcd_eligible_age={int(inputs.charity.qcd_eligible_age)})"
+        if bool(inputs.charity.enabled)
+        else "- Charity/QCD: disabled"
+    )
+    heirs_line = (
+        f"- Heirs: enabled (distribution_years={int(inputs.heirs.distribution_years)}, heir_tax_rate={float(inputs.heirs.heir_tax_rate):g})"
+        if bool(inputs.heirs.enabled)
+        else "- Heirs: disabled"
+    )
+
     summary_lines = [
-        f"- Best after-tax wealth: Path {best_label} ({best_path['path_name']}) at {_money(float(best_path['after_tax']))}",
-        f"- B − A (after-tax): {_money(paths.path_b['after_tax'] - paths.path_a['after_tax'])}",
-        f"- C − A (after-tax): {_money(paths.path_c['after_tax'] - paths.path_a['after_tax'])}",
+        f"- Best after-tax wealth: Path {best_label} ({best_path['path_name']}) at {_basis_money(inputs=inputs, nominal=float(best_path['after_tax']), real=float(best_path.get('after_tax_today', best_path['after_tax'])))}",
+        f"- B − A (after-tax): {_basis_money(inputs=inputs, nominal=paths.path_b['after_tax'] - paths.path_a['after_tax'], real=float(paths.path_b.get('after_tax_today', paths.path_b['after_tax']) - float(paths.path_a.get('after_tax_today', paths.path_a['after_tax']))))}",
+        f"- C − A (after-tax): {_basis_money(inputs=inputs, nominal=paths.path_c['after_tax'] - paths.path_a['after_tax'], real=float(paths.path_c.get('after_tax_today', paths.path_c['after_tax']) - float(paths.path_a.get('after_tax_today', paths.path_a['after_tax']))))}",
+        widow_line,
+        irmaa_line,
+        charity_line,
+        heirs_line,
+        f"- PV of spending (start-year $): {_money(float(pv_result.npv_spending_today))} (discount_rate={float(inputs.household.discount_rate):g})",
+        f"- PV of taxes (start-year $): {_money(float(pv_result.npv_taxes_today))}",
         "- 32% breakeven: "
         + (f"Year {breakeven.year}" if breakeven.year is not None else "Not reached"),
-        f"- Home purchase scenario: after-tax {_money(home.after_tax)}, legacy {_money(home.legacy)}",
+        f"- Home purchase scenario: after-tax {_basis_money(inputs=inputs, nominal=home.after_tax, real=home.after_tax / ((home.yearly_data[-1].get('inflation_multiplier', 1.0)) if home.yearly_data else 1.0))}, legacy {_basis_money(inputs=inputs, nominal=home.legacy, real=home.legacy / ((home.yearly_data[-1].get('inflation_multiplier', 1.0)) if home.yearly_data else 1.0))}",
     ]
     sections.append(
         ReportSection(
@@ -130,18 +167,88 @@ def build_report(
             ),
             tables=(
                 ReportTable(
-                    headers=["Path", "Strategy", "After-tax wealth", "Legacy", "First RMD"],
+                    headers=["Path", "Strategy", "After-tax wealth", "Legacy", "Heirs (after-tax)", "First RMD", "IRMAA total"],
                     rows=(
-                        ("A", paths.path_a["path_name"], _money(paths.path_a["after_tax"]), _money(paths.path_a["legacy"]), _money(paths.path_a["first_rmd"])),
-                        ("B", paths.path_b["path_name"], _money(paths.path_b["after_tax"]), _money(paths.path_b["legacy"]), _money(paths.path_b["first_rmd"])),
-                        ("C", paths.path_c["path_name"], _money(paths.path_c["after_tax"]), _money(paths.path_c["legacy"]), _money(paths.path_c["first_rmd"])),
+                        (
+                            "A",
+                            paths.path_a["path_name"],
+                            _basis_money(inputs=inputs, nominal=float(paths.path_a["after_tax"]), real=float(paths.path_a.get("after_tax_today", paths.path_a["after_tax"]))),
+                            _basis_money(inputs=inputs, nominal=float(paths.path_a["legacy"]), real=float(paths.path_a.get("legacy_today", paths.path_a["legacy"]))),
+                            _basis_money(inputs=inputs, nominal=float(paths.path_a.get("heirs_after_tax", 0.0)), real=float(paths.path_a.get("heirs_after_tax_today", paths.path_a.get("heirs_after_tax", 0.0)))),
+                            _money(paths.path_a["first_rmd"]),
+                            _money(float(paths.path_a.get("total_irmaa_cost", 0.0))),
+                        ),
+                        (
+                            "B",
+                            paths.path_b["path_name"],
+                            _basis_money(inputs=inputs, nominal=float(paths.path_b["after_tax"]), real=float(paths.path_b.get("after_tax_today", paths.path_b["after_tax"]))),
+                            _basis_money(inputs=inputs, nominal=float(paths.path_b["legacy"]), real=float(paths.path_b.get("legacy_today", paths.path_b["legacy"]))),
+                            _basis_money(inputs=inputs, nominal=float(paths.path_b.get("heirs_after_tax", 0.0)), real=float(paths.path_b.get("heirs_after_tax_today", paths.path_b.get("heirs_after_tax", 0.0)))),
+                            _money(paths.path_b["first_rmd"]),
+                            _money(float(paths.path_b.get("total_irmaa_cost", 0.0))),
+                        ),
+                        (
+                            "C",
+                            paths.path_c["path_name"],
+                            _basis_money(inputs=inputs, nominal=float(paths.path_c["after_tax"]), real=float(paths.path_c.get("after_tax_today", paths.path_c["after_tax"]))),
+                            _basis_money(inputs=inputs, nominal=float(paths.path_c["legacy"]), real=float(paths.path_c.get("legacy_today", paths.path_c["legacy"]))),
+                            _basis_money(inputs=inputs, nominal=float(paths.path_c.get("heirs_after_tax", 0.0)), real=float(paths.path_c.get("heirs_after_tax_today", paths.path_c.get("heirs_after_tax", 0.0)))),
+                            _money(paths.path_c["first_rmd"]),
+                            _money(float(paths.path_c.get("total_irmaa_cost", 0.0))),
+                        ),
                     ),
                 ),
                 ReportTable(
                     headers=["Delta", "Value"],
                     rows=(
-                        ("B − A (after-tax)", _money(paths.path_b["after_tax"] - paths.path_a["after_tax"])),
-                        ("C − A (after-tax)", _money(paths.path_c["after_tax"] - paths.path_a["after_tax"])),
+                        (
+                            "B − A (after-tax)",
+                            _basis_money(
+                                inputs=inputs,
+                                nominal=float(paths.path_b["after_tax"] - paths.path_a["after_tax"]),
+                                real=float(paths.path_b.get("after_tax_today", paths.path_b["after_tax"]) - float(paths.path_a.get("after_tax_today", paths.path_a["after_tax"]))),
+                            ),
+                        ),
+                        (
+                            "B − A (legacy)",
+                            _basis_money(
+                                inputs=inputs,
+                                nominal=float(paths.path_b["legacy"] - paths.path_a["legacy"]),
+                                real=float(paths.path_b.get("legacy_today", paths.path_b["legacy"]) - float(paths.path_a.get("legacy_today", paths.path_a["legacy"]))),
+                            ),
+                        ),
+                        (
+                            "B − A (heirs)",
+                            _basis_money(
+                                inputs=inputs,
+                                nominal=float(paths.path_b.get("heirs_after_tax", 0.0) - float(paths.path_a.get("heirs_after_tax", 0.0))),
+                                real=float(paths.path_b.get("heirs_after_tax_today", paths.path_b.get("heirs_after_tax", 0.0)) - float(paths.path_a.get("heirs_after_tax_today", paths.path_a.get("heirs_after_tax", 0.0)))),
+                            ),
+                        ),
+                        (
+                            "C − A (after-tax)",
+                            _basis_money(
+                                inputs=inputs,
+                                nominal=float(paths.path_c["after_tax"] - paths.path_a["after_tax"]),
+                                real=float(paths.path_c.get("after_tax_today", paths.path_c["after_tax"]) - float(paths.path_a.get("after_tax_today", paths.path_a["after_tax"]))),
+                            ),
+                        ),
+                        (
+                            "C − A (legacy)",
+                            _basis_money(
+                                inputs=inputs,
+                                nominal=float(paths.path_c["legacy"] - paths.path_a["legacy"]),
+                                real=float(paths.path_c.get("legacy_today", paths.path_c["legacy"]) - float(paths.path_a.get("legacy_today", paths.path_a["legacy"]))),
+                            ),
+                        ),
+                        (
+                            "C − A (heirs)",
+                            _basis_money(
+                                inputs=inputs,
+                                nominal=float(paths.path_c.get("heirs_after_tax", 0.0) - float(paths.path_a.get("heirs_after_tax", 0.0))),
+                                real=float(paths.path_c.get("heirs_after_tax_today", paths.path_c.get("heirs_after_tax", 0.0)) - float(paths.path_a.get("heirs_after_tax_today", paths.path_a.get("heirs_after_tax", 0.0)))),
+                            ),
+                        ),
                     ),
                 ),
             ),
@@ -171,6 +278,7 @@ def build_report(
     )
 
     # --- Home purchase ---
+    home_inflation_end = float(home.yearly_data[-1].get("inflation_multiplier", 1.0)) if home.yearly_data else 1.0
     sections.append(
         ReportSection(
             title="Home Purchase Scenario",
@@ -182,8 +290,11 @@ def build_report(
                 ReportTable(
                     headers=["Metric", "Value"],
                     rows=(
-                        ("After-tax wealth", _money(home.after_tax)),
-                        ("Legacy", _money(home.legacy)),
+                        (
+                            "After-tax wealth",
+                            _basis_money(inputs=inputs, nominal=home.after_tax, real=home.after_tax / home_inflation_end),
+                        ),
+                        ("Legacy", _basis_money(inputs=inputs, nominal=home.legacy, real=home.legacy / home_inflation_end)),
                         ("Total conversions", _money(home.total_conversions)),
                         ("Total RMDs", _money(home.total_rmds)),
                         ("Total RMD tax", _money(home.total_rmd_tax)),

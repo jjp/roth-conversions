@@ -3,7 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..models import HouseholdInputs
+from ..irmaa_tables import get_irmaa_addons_monthly
 from ..rmd import required_minimum_distribution
+from ..social_security import taxable_social_security
+from ..tax import calculate_tax_ordinary_income, marginal_rate_ordinary_income
+from ..tax_tables import get_bracket_ceiling, get_standard_deduction
+from ..withdrawal_policy import pay_tax
 
 
 @dataclass(frozen=True)
@@ -13,6 +18,7 @@ class HomePurchaseScenario:
     total_conversions: float
     total_rmds: float
     total_rmd_tax: float
+    total_irmaa_cost: float
     after_tax: float
     legacy: float
     yearly_data: tuple[dict, ...]
@@ -36,14 +42,17 @@ def project_with_home_purchase(
     roth = float(inputs.total_roth)
     taxable = float(inputs.joint.taxable_accounts)
 
-    # Home purchase split logic from notebook
-    split_taxable = min(down_payment // 2, taxable - float(inputs.plan.minimum_cash_reserve))
-    split_ira_net = down_payment - split_taxable
-    split_ira_gross = split_ira_net * 1.24
+    base_filing_status = str(inputs.household.tax_filing_status)
+    tax_policy = inputs.tax_payment_policy
+    widow_event = inputs.widow_event
+    charity = inputs.charity
 
     total_conversions = 0.0
     total_rmds = 0.0
     total_rmd_tax = 0.0
+    total_irmaa_cost = 0.0
+
+    magi_by_calendar_year: dict[int, float] = {}
 
     yearly_data: list[dict] = []
 
@@ -52,77 +61,253 @@ def project_with_home_purchase(
         spouse2_age = int(inputs.spouse2.age) + yr
         calendar_year = base_year + yr
 
+        inflation_multiplier = (1.0 + float(inputs.assumptions.inflation_rate)) ** yr
+
+        widow_active = bool(widow_event.enabled) and widow_event.widow_year is not None and calendar_year >= int(widow_event.widow_year)
+        filing_status = "Single" if widow_active else base_filing_status
+
         year: dict[str, object] = {
             "year": yr + 1,
             "calendar_year": calendar_year,
             "spouse1_age": spouse1_age,
             "spouse2_age": spouse2_age,
+            "inflation_multiplier": inflation_multiplier,
         }
         year["ira_start"] = ira
         year["roth_start"] = roth
         year["taxable_start"] = taxable
 
+        # Standard deduction (pinned), used by the tax engine.
+        try:
+            standard_deduction = get_standard_deduction(tax_year=calendar_year, filing_status=filing_status)
+        except Exception:
+            standard_deduction = 30_000.0
+
+        # RMDs
         spouse1_rmd = required_minimum_distribution(ira * 0.33, spouse1_age)
         spouse2_rmd = required_minimum_distribution(ira * 0.67, spouse2_age)
         total_rmd_this_year = spouse1_rmd + spouse2_rmd
-        ira -= total_rmd_this_year
         total_rmds += total_rmd_this_year
 
-        rmd_tax = total_rmd_this_year * 0.24
-        total_rmd_tax += rmd_tax
+        # Social security (widow modeling: survivor benefit)
+        ss1 = float(inputs.spouse1.ss_annual) if yr >= inputs.years_to_spouse1_ss else 0.0
+        ss2 = float(inputs.spouse2.ss_annual) if yr >= inputs.years_to_spouse2_ss else 0.0
+        total_ss = max(ss1, ss2) if widow_active else (ss1 + ss2)
+        year["ss_income"] = total_ss
 
-        year["rmd"] = total_rmd_this_year
-        year["rmd_tax"] = rmd_tax
+        # Base spending need + one-time home purchase cash need.
+        income_need_multiplier = float(widow_event.income_need_multiplier) if widow_active else 1.0
+        income_need = (
+            float(inputs.plan.annual_income_need)
+            * inflation_multiplier
+            * income_need_multiplier
+        )
+        year["income_need"] = income_need
 
+        charity_need = 0.0
+        qcd = 0.0
+        if bool(charity.enabled) and float(charity.annual_amount) > 0:
+            charity_need = float(charity.annual_amount) * inflation_multiplier
+            if bool(charity.use_qcd):
+                eligible = (spouse1_age >= int(charity.qcd_eligible_age)) or (spouse2_age >= int(charity.qcd_eligible_age))
+                if eligible:
+                    covered_people = 2 if filing_status == "MFJ" else 1
+                    cap = float(charity.qcd_annual_cap_per_person) * float(covered_people)
+                    qcd = min(charity_need, cap, max(0.0, ira))
+
+        year["charity_need"] = charity_need
+        year["qcd"] = qcd
         home_this_year = yr == purchase_year_offset
-        if home_this_year:
-            taxable -= split_taxable
-            ira -= split_ira_gross
+        home_cash_need = float(down_payment) if home_this_year else 0.0
+
+        # From savings needed for annual spending (not including the home one-time need).
+        # Include charitable giving as a planned cash need; QCD (if any) directly covers part of that need.
+        total_need = income_need + float(charity_need)
+        from_savings_needed = max(0.0, total_need - float(qcd) - total_ss)
+
+        qcd_from_rmd = min(float(qcd), total_rmd_this_year) if total_rmd_this_year > 0 else 0.0
+        qcd_extra = max(0.0, float(qcd) - qcd_from_rmd)
+
+        # Use RMDs (net of any QCD applied against the RMD) toward annual spending first.
+        rmd_available_for_income = max(0.0, total_rmd_this_year - qcd_from_rmd)
+        rmd_for_income = min(rmd_available_for_income, from_savings_needed)
+        remaining_need = from_savings_needed - rmd_for_income
+
+        # Regular spending withdrawals (simple heuristic like the main projection).
+        from_taxable = min(remaining_need * 0.5, max(0.0, taxable - float(inputs.plan.minimum_cash_reserve)))
+        from_roth = min(remaining_need * 0.3, roth)
+        from_ira_spending = max(0.0, remaining_need - from_taxable - from_roth)
+
+        # Home purchase drawdown (prioritize taxable above reserve, then Roth, then IRA).
+        home_from_taxable = 0.0
+        home_from_roth = 0.0
+        home_from_ira = 0.0
+        if home_cash_need > 0:
             year["home_purchase"] = True
-            year["home_from_taxable"] = split_taxable
-            year["home_from_ira"] = split_ira_gross
+            available_cash = max(0.0, taxable - float(inputs.plan.minimum_cash_reserve) - from_taxable)
+            home_from_taxable = min(home_cash_need, available_cash)
+            remaining_home = home_cash_need - home_from_taxable
+            if remaining_home > 0:
+                home_from_roth = min(remaining_home, max(0.0, roth - from_roth))
+                remaining_home -= home_from_roth
+            if remaining_home > 0:
+                home_from_ira = remaining_home
+            year["home_from_taxable"] = home_from_taxable
+            year["home_from_roth"] = home_from_roth
+            year["home_from_ira"] = home_from_ira
         else:
             year["home_purchase"] = False
 
-        # Conversions
+        taxable_ira_withdrawal = max(0.0, total_rmd_this_year - qcd_from_rmd) + from_ira_spending + home_from_ira
+        total_ira_outflow = total_rmd_this_year + from_ira_spending + home_from_ira + qcd_extra
+
+        # Compute SS taxable (without conversion) and base taxable income.
+        ss_taxable_no_conv = taxable_social_security(
+            total_benefits=total_ss,
+            other_income=taxable_ira_withdrawal,
+            filing_status=filing_status,
+        )
+        base_taxable_income = max(0.0, ss_taxable_no_conv + taxable_ira_withdrawal - float(standard_deduction))
+
+        # Conversions (tax-aware, still simplified: aim for ≤24% by default).
         conversion = 0.0
-        if yr < int(conversion_years):
-            available_for_tax = taxable - float(inputs.plan.minimum_cash_reserve)
-            if yr < purchase_year_offset:
-                available_for_tax -= float(down_payment)
+        conversion_tax = 0.0
+        if yr < int(conversion_years) and float(max_annual_conv) > 0:
+            # Available to pay conversion tax from taxable after spending + home.
+            available_for_conv_tax = max(
+                0.0,
+                taxable
+                - float(inputs.plan.minimum_cash_reserve)
+                - from_taxable
+                - home_from_taxable,
+            )
 
-            if available_for_tax > 0:
-                max_from_funds = available_for_tax / 0.24
-                max_this_year = 75_000.0 if home_this_year else float(max_annual_conv)
-                conversion = min(max_from_funds, max_this_year, ira)
-                conversion = max(0.0, conversion)
+            mr = marginal_rate_ordinary_income(
+                taxable_income=base_taxable_income,
+                tax_year=calendar_year,
+                filing_status=filing_status,
+            )
 
-        conv_tax = conversion * 0.24 if conversion > 0 else 0.0
-        if conversion > 0:
-            ira -= conversion
-            roth += conversion
-            taxable -= conv_tax
-            total_conversions += conversion
+            try:
+                ceiling_24 = get_bracket_ceiling(tax_year=calendar_year, filing_status=filing_status, rate=0.24)
+            except Exception:
+                ceiling_24 = 383_900.0
 
+            room_in_24 = max(0.0, float(ceiling_24) - base_taxable_income)
+            max_affordable = available_for_conv_tax / mr if mr > 0 else 0.0
+
+            conversion = min(float(max_annual_conv), room_in_24, max_affordable, max(0.0, ira - total_ira_outflow))
+            conversion = max(0.0, conversion)
+
+            if conversion > 0:
+                ss_taxable_with_conv = taxable_social_security(
+                    total_benefits=total_ss,
+                    other_income=taxable_ira_withdrawal + conversion,
+                    filing_status=filing_status,
+                )
+                taxable_income_with_conv = max(
+                    0.0,
+                    ss_taxable_with_conv + taxable_ira_withdrawal + conversion - float(standard_deduction),
+                )
+                taxable_income_no_conv = max(
+                    0.0,
+                    ss_taxable_no_conv + taxable_ira_withdrawal - float(standard_deduction),
+                )
+                conversion_tax = calculate_tax_ordinary_income(
+                    taxable_income=taxable_income_with_conv,
+                    tax_year=calendar_year,
+                    filing_status=filing_status,
+                ) - calculate_tax_ordinary_income(
+                    taxable_income=taxable_income_no_conv,
+                    tax_year=calendar_year,
+                    filing_status=filing_status,
+                )
+                total_conversions += conversion
+
+        # Income tax after conversion.
+        ss_taxable_final = taxable_social_security(
+            total_benefits=total_ss,
+            other_income=taxable_ira_withdrawal + conversion,
+            filing_status=filing_status,
+        )
+        total_taxable_income = max(
+            0.0,
+            ss_taxable_final + taxable_ira_withdrawal + conversion - float(standard_deduction),
+        )
+        income_tax = calculate_tax_ordinary_income(
+            taxable_income=total_taxable_income,
+            tax_year=calendar_year,
+            filing_status=filing_status,
+        )
+        mr_for_grossup = marginal_rate_ordinary_income(
+            taxable_income=total_taxable_income,
+            tax_year=calendar_year,
+            filing_status=filing_status,
+        )
+
+        # Allocate portion of income tax to RMD for reporting.
+        rmd_taxable = max(0.0, total_rmd_this_year - qcd_from_rmd)
+        rmd_tax = (income_tax * (rmd_taxable / taxable_ira_withdrawal)) if taxable_ira_withdrawal > 0 else 0.0
+        total_rmd_tax += rmd_tax
+
+        # IRMAA (optional).
+        irmaa_cost = 0.0
+        magi_current_year = float(taxable_ira_withdrawal) + float(conversion) + float(ss_taxable_final)
+        magi_by_calendar_year[calendar_year] = magi_current_year
+        if bool(inputs.medicare.irmaa_enabled):
+            lookback_magi = float(magi_by_calendar_year.get(calendar_year - 2, magi_current_year))
+            part_b_add, part_d_add = get_irmaa_addons_monthly(
+                premium_year=calendar_year,
+                filing_status=filing_status,
+                magi=lookback_magi,
+            )
+            covered_people = 2 if filing_status == "MFJ" else 1
+            irmaa_cost = (part_b_add + part_d_add) * 12.0 * float(covered_people)
+            total_irmaa_cost += irmaa_cost
+
+        # Update balances (withdrawals + conversion).
+        ira -= total_ira_outflow
+        ira -= conversion
+        roth += conversion
+
+        taxable -= from_taxable
+        taxable -= home_from_taxable
+        roth -= from_roth
+        roth -= home_from_roth
+
+        # Pay taxes/expenses.
+        taxable, ira = pay_tax(
+            taxable=taxable,
+            ira=ira,
+            tax_due=conversion_tax,
+            source=str(tax_policy.conversion_tax_payment_source),
+            minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+            marginal_rate=mr_for_grossup,
+        )
+        taxable, ira = pay_tax(
+            taxable=taxable,
+            ira=ira,
+            tax_due=income_tax,
+            source=str(tax_policy.income_tax_payment_source),
+            minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+            marginal_rate=mr_for_grossup,
+        )
+        if irmaa_cost > 0:
+            taxable, ira = pay_tax(
+                taxable=taxable,
+                ira=ira,
+                tax_due=irmaa_cost,
+                source="taxable",
+                minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+                marginal_rate=mr_for_grossup,
+            )
+
+        year["rmd"] = total_rmd_this_year
+        year["rmd_tax"] = rmd_tax
         year["conversion"] = conversion
-        year["conv_tax"] = conv_tax
-
-        # Spending
-        income_need = float(inputs.plan.annual_income_need) * (1.0 + float(inputs.assumptions.inflation_rate)) ** yr
-        ss1 = float(inputs.spouse1.ss_annual) if yr >= inputs.years_to_spouse1_ss else 0.0
-        ss2 = float(inputs.spouse2.ss_annual) if yr >= inputs.years_to_spouse2_ss else 0.0
-        total_ss = ss1 + ss2
-
-        from_rmd_for_spending = min(total_rmd_this_year * 0.76, max(0.0, income_need - total_ss))
-        remaining_need = max(0.0, income_need - total_ss - from_rmd_for_spending)
-
-        from_taxable = min(remaining_need * 0.3, taxable - float(inputs.plan.minimum_cash_reserve))
-        from_roth = min(remaining_need * 0.2, roth)
-        from_ira = remaining_need - from_taxable - from_roth
-
-        taxable -= max(0.0, from_taxable)
-        roth -= max(0.0, from_roth)
-        ira -= max(0.0, from_ira * 1.24)
+        year["conv_tax"] = conversion_tax
+        year["income_tax"] = income_tax
+        year["irmaa_cost"] = irmaa_cost
 
         # Growth
         ira *= (1.0 + float(inputs.assumptions.ira_return))
@@ -144,6 +329,7 @@ def project_with_home_purchase(
         total_conversions=total_conversions,
         total_rmds=total_rmds,
         total_rmd_tax=total_rmd_tax,
+        total_irmaa_cost=total_irmaa_cost,
         after_tax=after_tax,
         legacy=legacy,
         yearly_data=tuple(yearly_data),

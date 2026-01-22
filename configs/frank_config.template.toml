@@ -22,7 +22,11 @@ objective = "maximize_after_tax_wealth"
 
 # P2.8 Time value of money (used by NPV objectives)
 # Typical values: 0.00 to 0.05
-# discount_rate = 0.03
+discount_rate = 0.03
+
+[inputs.reporting]
+# "nominal" = future dollars, "real" = start-year (today's) dollars
+value_basis = "real"
 
 [inputs.spouse1]
 name = "Spouse 1"
