@@ -104,6 +104,43 @@ roth-conversions --config configs/retirement_config.template.toml three-paths
 python -m roth_conversions.cli --config configs/retirement_config.template.toml three-paths
 ```
 
+### Run all scenarios
+
+This repo includes a set of ready-to-run scenario configs under `configs/` (see `configs/README.md`).
+
+Run all _scenario_ configs (recommended):
+
+```pwsh
+New-Item -ItemType Directory -Force outputs/scenarios | Out-Null
+
+Get-ChildItem configs -Filter "retirement_config.scenario_*.toml" | Sort-Object Name | ForEach-Object {
+  $cfg = $_.FullName
+  $base = $_.BaseName
+  Write-Host "Running $($_.Name)"
+
+  uv run retirement-toolkit roth --config $cfg three-paths | Out-Null
+  uv run retirement-toolkit roth --config $cfg report --format md --out ("outputs/scenarios/$base.md")
+}
+```
+
+Run _all_ ready-to-run configs (includes `minimal_roth` and `example`, excludes the canonical template):
+
+```pwsh
+New-Item -ItemType Directory -Force outputs/scenarios | Out-Null
+
+Get-ChildItem configs -Filter "retirement_config*.toml" |
+  Where-Object { $_.Name -ne "retirement_config.template.toml" } |
+  Sort-Object Name |
+  ForEach-Object {
+    $cfg = $_.FullName
+    $base = $_.BaseName
+    Write-Host "Running $($_.Name)"
+
+    uv run retirement-toolkit roth --config $cfg three-paths | Out-Null
+    uv run retirement-toolkit roth --config $cfg report --format md --out ("outputs/scenarios/$base.md")
+  }
+```
+
 ### Run unit tests
 
 ```pwsh
