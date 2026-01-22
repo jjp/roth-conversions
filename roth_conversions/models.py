@@ -54,6 +54,32 @@ class NIITInputs:
 
 
 @dataclass(frozen=True)
+class RothRulesInputs:
+    """Roth IRA rule approximations.
+
+    Focus: conversion 5-year rule (10% penalty on withdrawn conversion principal if <5 years and <59½).
+    We use whole-year ages and approximate the threshold with 60.
+    """
+
+    enabled: bool = False
+    conversion_wait_years: int = 5
+    qualified_age_years: int = 60
+    penalty_rate: float = 0.10
+    policy: str = "penalty"  # "penalty" | "prevent"
+
+
+@dataclass(frozen=True)
+class AssetLocationInputs:
+    """Asset location / return sensitivity scenarios.
+
+    This does not re-allocate balances; it re-runs scenarios under alternate return assumptions.
+    """
+
+    enabled: bool = False
+    roth_return_deltas: tuple[float, ...] = (0.0, 0.01, 0.02)
+
+
+@dataclass(frozen=True)
 class JointAccounts:
     taxable_accounts: float
 
@@ -147,6 +173,8 @@ class HouseholdInputs:
     widow_event: WidowEventInputs = WidowEventInputs()
     reporting: ReportingInputs = ReportingInputs()
     niit: NIITInputs = NIITInputs()
+    roth_rules: RothRulesInputs = RothRulesInputs()
+    asset_location: AssetLocationInputs = AssetLocationInputs()
     charity: CharitableGivingInputs = CharitableGivingInputs()
     heirs: HeirsInputs = HeirsInputs()
 
@@ -205,6 +233,7 @@ class ProjectionYear:
     cumulative_total_tax: float
     irmaa_cost: float = 0.0
     niit_tax: float = 0.0
+    roth_penalty_tax: float = 0.0
     magi: float = 0.0
     investment_income: float = 0.0
     income_need: float = 0.0
@@ -226,6 +255,7 @@ class ProjectionResult:
     yearly: Sequence[ProjectionYear]
     total_irmaa_cost: float = 0.0
     total_niit_tax: float = 0.0
+    total_roth_penalty_tax: float = 0.0
     after_tax_today: float = 0.0
     legacy_today: float = 0.0
     npv_spending_today: float = 0.0

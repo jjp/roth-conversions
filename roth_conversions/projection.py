@@ -12,6 +12,7 @@ from .withdrawal_policy import pay_tax
 from .npv import npv
 from .heirs import simulate_inherited_distribution_after_tax, simulate_inherited_roth_after_tax
 from .niit import calculate_niit
+from .roth_rules import RothLedger
 
 
 STANDARD_DEDUCTION_MFJ_APPROX_2025 = 30_000.0
@@ -46,6 +47,8 @@ def project_with_tax_tracking(
     roth = float(inputs.total_roth)
     taxable = float(inputs.joint.taxable_accounts)
 
+    roth_ledger = RothLedger(basis_remaining=float(roth), buckets=[])
+
     base_filing_status = str(inputs.household.tax_filing_status)
     tax_policy = inputs.tax_payment_policy
     widow_event = inputs.widow_event
@@ -56,6 +59,7 @@ def project_with_tax_tracking(
     cumulative_rmd_tax = 0.0
     cumulative_irmaa_cost = 0.0
     cumulative_niit_tax = 0.0
+    cumulative_roth_penalty_tax = 0.0
     total_conversions = 0.0
     total_rmds = 0.0
 
@@ -134,7 +138,28 @@ def project_with_tax_tracking(
 
         # Withdrawals
         from_taxable = min(remaining_need * 0.5, max(0.0, taxable - float(inputs.plan.minimum_cash_reserve)))
-        from_roth = min(remaining_need * 0.3, roth)
+        from_roth_requested = min(remaining_need * 0.3, roth)
+        roth_penalty_tax = 0.0
+        if bool(inputs.roth_rules.enabled) and from_roth_requested > 0:
+            # Whole-year approximation: if both spouses are modeled, use the younger as the conservative age.
+            household_age_years = min(spouse1_age, spouse2_age)
+            actual_from_roth, penalty_base = roth_ledger.withdraw(
+                requested=from_roth_requested,
+                year_index=yr,
+                conversion_wait_years=int(inputs.roth_rules.conversion_wait_years),
+                qualified_age_years=int(inputs.roth_rules.qualified_age_years),
+                household_age_years=int(household_age_years),
+                policy=str(inputs.roth_rules.policy),
+            )
+            from_roth = min(float(actual_from_roth), roth)
+            shortfall = max(0.0, float(from_roth_requested - from_roth))
+            remaining_need += shortfall
+
+            if penalty_base > 0:
+                roth_penalty_tax = float(inputs.roth_rules.penalty_rate) * float(penalty_base)
+        else:
+            from_roth = from_roth_requested
+
         from_ira_extra = max(0.0, remaining_need - from_taxable - from_roth)
 
         taxable_ira_withdrawal = max(0.0, total_rmd - qcd_from_rmd) + from_ira_extra
@@ -203,6 +228,10 @@ def project_with_tax_tracking(
                 total_conversions += conversion
                 cumulative_conv_tax += conversion_tax
 
+        # Track conversions for Roth 5-year rule approximations.
+        if bool(inputs.roth_rules.enabled) and conversion > 0:
+            roth_ledger.deposit_conversion(amount=conversion, year_index=yr)
+
         # Income tax & allocate portion to RMD
         # Income tax after conversion decision.
         ss_taxable_final = taxable_social_security(
@@ -236,6 +265,9 @@ def project_with_tax_tracking(
             )
             cumulative_niit_tax += niit_tax
 
+        if roth_penalty_tax > 0:
+            cumulative_roth_penalty_tax += float(roth_penalty_tax)
+
         if bool(inputs.medicare.irmaa_enabled):
             lookback_year = calendar_year - 2
             lookback_magi = float(magi_by_calendar_year.get(lookback_year, magi_current_year))
@@ -256,7 +288,7 @@ def project_with_tax_tracking(
             rmd_tax = 0.0
 
         cumulative_rmd_tax += rmd_tax
-        cumulative_total_tax = cumulative_conv_tax + cumulative_rmd_tax + cumulative_niit_tax
+        cumulative_total_tax = cumulative_conv_tax + cumulative_rmd_tax + cumulative_niit_tax + cumulative_roth_penalty_tax
 
         # Update balances
         ira -= total_ira_outflow
@@ -287,6 +319,17 @@ def project_with_tax_tracking(
                 taxable=taxable,
                 ira=ira,
                 tax_due=niit_tax,
+                source=str(tax_policy.income_tax_payment_source),
+                minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+                marginal_rate=mr_for_grossup,
+            )
+
+        # Roth early-withdrawal penalty treated as an annual tax/expense.
+        if roth_penalty_tax > 0:
+            taxable, ira = pay_tax(
+                taxable=taxable,
+                ira=ira,
+                tax_due=float(roth_penalty_tax),
                 source=str(tax_policy.income_tax_payment_source),
                 minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
                 marginal_rate=mr_for_grossup,
@@ -333,6 +376,7 @@ def project_with_tax_tracking(
                 cumulative_total_tax=cumulative_total_tax,
                 irmaa_cost=irmaa_cost,
                 niit_tax=niit_tax,
+                roth_penalty_tax=float(roth_penalty_tax),
                 magi=magi_current_year,
                 investment_income=investment_income,
                 income_need=income_need,
@@ -372,7 +416,14 @@ def project_with_tax_tracking(
 
     spending_today_series = [float(y.income_need) / float(y.inflation_multiplier) for y in yearly]
     taxes_today_series = [
-        (float(y.income_tax) + float(y.conversion_tax) + float(y.irmaa_cost) + float(y.niit_tax)) / float(y.inflation_multiplier)
+        (
+            float(y.income_tax)
+            + float(y.conversion_tax)
+            + float(y.irmaa_cost)
+            + float(y.niit_tax)
+            + float(y.roth_penalty_tax)
+        )
+        / float(y.inflation_multiplier)
         for y in yearly
     ]
 
@@ -385,7 +436,8 @@ def project_with_tax_tracking(
         total_conv_tax=cumulative_conv_tax,
         total_rmds=total_rmds,
         total_rmd_tax=cumulative_rmd_tax,
-        total_lifetime_tax=cumulative_conv_tax + cumulative_rmd_tax + cumulative_niit_tax,
+        total_lifetime_tax=cumulative_conv_tax + cumulative_rmd_tax + cumulative_niit_tax + cumulative_roth_penalty_tax,
+        total_roth_penalty_tax=cumulative_roth_penalty_tax,
         after_tax=after_tax,
         legacy=legacy,
         yearly=tuple(yearly),
@@ -418,6 +470,8 @@ def project_path(
     roth = float(inputs.total_roth)
     taxable = float(inputs.joint.taxable_accounts)
 
+    roth_ledger = RothLedger(basis_remaining=float(roth), buckets=[])
+
     base_filing_status = str(inputs.household.tax_filing_status)
     tax_policy = inputs.tax_payment_policy
     widow_event = inputs.widow_event
@@ -430,6 +484,7 @@ def project_path(
     total_rmd_tax = 0.0
     total_irmaa_cost = 0.0
     total_niit_tax = 0.0
+    total_roth_penalty_tax = 0.0
 
     yearly_details: list[dict] = []
 
@@ -484,7 +539,26 @@ def project_path(
         remaining_need = from_savings_needed - rmd_for_income
 
         from_taxable = min(remaining_need * 0.5, max(0.0, taxable - float(inputs.plan.minimum_cash_reserve)))
-        from_roth = min(remaining_need * 0.3, roth)
+        from_roth_requested = min(remaining_need * 0.3, roth)
+        roth_penalty_tax = 0.0
+        if bool(inputs.roth_rules.enabled) and from_roth_requested > 0:
+            household_age_years = min(spouse1_age, spouse2_age)
+            actual_from_roth, penalty_base = roth_ledger.withdraw(
+                requested=from_roth_requested,
+                year_index=yr,
+                conversion_wait_years=int(inputs.roth_rules.conversion_wait_years),
+                qualified_age_years=int(inputs.roth_rules.qualified_age_years),
+                household_age_years=int(household_age_years),
+                policy=str(inputs.roth_rules.policy),
+            )
+            from_roth = min(float(actual_from_roth), roth)
+            shortfall = max(0.0, float(from_roth_requested - from_roth))
+            remaining_need += shortfall
+            if penalty_base > 0:
+                roth_penalty_tax = float(inputs.roth_rules.penalty_rate) * float(penalty_base)
+        else:
+            from_roth = from_roth_requested
+
         from_ira_extra = max(0.0, remaining_need - from_taxable - from_roth)
         taxable_ira_withdrawal = max(0.0, total_rmd - qcd_from_rmd) + from_ira_extra
         total_ira_outflow = total_rmd + from_ira_extra + qcd_extra
@@ -547,6 +621,9 @@ def project_path(
                 total_conversions += conversion
                 total_conversion_tax += conversion_tax
 
+        if bool(inputs.roth_rules.enabled) and conversion > 0:
+            roth_ledger.deposit_conversion(amount=conversion, year_index=yr)
+
         ss_taxable_final = taxable_social_security(
             total_benefits=total_ss,
             other_income=taxable_ira_withdrawal + conversion,
@@ -588,6 +665,9 @@ def project_path(
                 filing_status=filing_status,
             )
             total_niit_tax += niit_tax
+
+        if roth_penalty_tax > 0:
+            total_roth_penalty_tax += float(roth_penalty_tax)
 
         rmd_taxable = max(0.0, total_rmd - qcd_from_rmd)
         if taxable_ira_withdrawal > 0:
@@ -631,6 +711,16 @@ def project_path(
                 marginal_rate=mr_for_grossup,
             )
 
+        if roth_penalty_tax > 0:
+            taxable, ira = pay_tax(
+                taxable=taxable,
+                ira=ira,
+                tax_due=float(roth_penalty_tax),
+                source=str(tax_policy.income_tax_payment_source),
+                minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+                marginal_rate=mr_for_grossup,
+            )
+
         if irmaa_cost > 0:
             taxable, ira = pay_tax(
                 taxable=taxable,
@@ -668,6 +758,7 @@ def project_path(
                 "income_tax": income_tax,
                 "irmaa_cost": irmaa_cost,
                 "niit_tax": niit_tax,
+                "roth_penalty_tax": float(roth_penalty_tax),
                 "magi": magi_current_year,
                 "investment_income": investment_income,
                 "ira_end": ira,
@@ -706,7 +797,13 @@ def project_path(
 
     discount_rate = float(inputs.household.discount_rate)
     taxes_today_series = [
-        (float(row.get("income_tax", 0.0)) + float(row.get("conversion_tax", 0.0)) + float(row.get("irmaa_cost", 0.0)) + float(row.get("niit_tax", 0.0)))
+        (
+            float(row.get("income_tax", 0.0))
+            + float(row.get("conversion_tax", 0.0))
+            + float(row.get("irmaa_cost", 0.0))
+            + float(row.get("niit_tax", 0.0))
+            + float(row.get("roth_penalty_tax", 0.0))
+        )
         / float(row.get("inflation_multiplier", 1.0) or 1.0)
         for row in yearly_details
     ]
@@ -729,6 +826,7 @@ def project_path(
         "total_rmd_tax": total_rmd_tax,
         "total_irmaa_cost": total_irmaa_cost,
         "total_niit_tax": total_niit_tax,
+        "total_roth_penalty_tax": total_roth_penalty_tax,
         "ira": ira,
         "roth": roth,
         "taxable": taxable,

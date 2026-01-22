@@ -11,6 +11,7 @@ except ModuleNotFoundError:  # pragma: no cover
     tomllib = None  # type: ignore
 
 from .models import (
+    AssetLocationInputs,
     CharitableGivingInputs,
     Household,
     HouseholdInputs,
@@ -20,6 +21,7 @@ from .models import (
     NIITInputs,
     PlanInputs,
     ReportingInputs,
+    RothRulesInputs,
     ReturnAssumptions,
     SpouseInputs,
     TaxPaymentPolicy,
@@ -112,6 +114,35 @@ def parse_inputs(cfg: dict[str, Any]) -> HouseholdInputs:
     if not (0.0 <= float(niit_inputs.realization_fraction) <= 1.0):
         raise ValueError("inputs.taxes.niit_realization_fraction must be between 0 and 1")
 
+    roth_rules = inputs.get("roth_rules", {})
+    roth_rules_inputs = RothRulesInputs(
+        enabled=bool(roth_rules.get("enabled", False)),
+        conversion_wait_years=int(roth_rules.get("conversion_wait_years", 5)),
+        qualified_age_years=int(roth_rules.get("qualified_age_years", 60)),
+        penalty_rate=float(roth_rules.get("penalty_rate", 0.10)),
+        policy=str(roth_rules.get("policy", "penalty")),
+    )
+    if roth_rules_inputs.conversion_wait_years <= 0:
+        raise ValueError("inputs.roth_rules.conversion_wait_years must be > 0")
+    if roth_rules_inputs.qualified_age_years <= 0:
+        raise ValueError("inputs.roth_rules.qualified_age_years must be > 0")
+    if not (0.0 <= float(roth_rules_inputs.penalty_rate) <= 1.0):
+        raise ValueError("inputs.roth_rules.penalty_rate must be between 0 and 1")
+    if roth_rules_inputs.policy not in {"penalty", "prevent"}:
+        raise ValueError("inputs.roth_rules.policy must be 'penalty' or 'prevent'")
+
+    asset_location = inputs.get("asset_location", {})
+    deltas_raw = asset_location.get("roth_return_deltas", (0.0, 0.01, 0.02))
+    deltas: tuple[float, ...]
+    if isinstance(deltas_raw, (list, tuple)):
+        deltas = tuple(float(x) for x in deltas_raw)
+    else:
+        deltas = (0.0, 0.01, 0.02)
+    asset_location_inputs = AssetLocationInputs(
+        enabled=bool(asset_location.get("enabled", False)),
+        roth_return_deltas=deltas,
+    )
+
     withdrawal_policy = inputs.get("withdrawal_policy", {})
     tax_payment_policy = TaxPaymentPolicy(
         income_tax_payment_source=str(withdrawal_policy.get("income_tax_payment_source", "taxable")),
@@ -198,6 +229,8 @@ def parse_inputs(cfg: dict[str, Any]) -> HouseholdInputs:
         widow_event=widow_event,
         reporting=reporting_inputs,
         niit=niit_inputs,
+        roth_rules=roth_rules_inputs,
+        asset_location=asset_location_inputs,
         charity=charity_inputs,
         heirs=heirs_inputs,
     )

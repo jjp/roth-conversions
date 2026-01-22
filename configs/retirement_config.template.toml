@@ -96,3 +96,21 @@ qcd_annual_cap_per_person = 100000.0
 enabled = false
 distribution_years = 10  # common values: 5 or 10
 heir_tax_rate = 0.30
+
+[inputs.roth_rules]
+# Roth conversion 5-year rule (simplified):
+# - When enabled, withdrawals sourced from conversion principal within conversion_wait_years
+#   and before qualified_age_years incur a penalty_rate.
+# - policy="penalty" applies the penalty but allows the withdrawal.
+# - policy="prevent" disallows using "young" conversion principal (forces other sources).
+enabled = false
+conversion_wait_years = 5
+qualified_age_years = 60
+penalty_rate = 0.10
+policy = "penalty"  # "penalty" | "prevent"
+
+[inputs.asset_location]
+# Sensitivity runner: re-runs Three Paths under alternate Roth return assumptions.
+# It does not re-allocate balances; it only changes return assumptions.
+enabled = false
+roth_return_deltas = [0.00, 0.01, 0.02]

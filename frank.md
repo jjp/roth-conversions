@@ -50,9 +50,7 @@ It is **not** a “condition”, toggle, or limitation that prevents using the t
 
 ## Current status (quick check)
 
-✅ Done (basic): P0.1, P0.2, P0.3, P1.4, P1.5, P1.6, P1.7, P2.8, P2.9, P2.10, P3.11
-
-⏳ Not done yet: P3.12 (Roth conversion 5-year rule tracking), P3.13 (asset location scenarios/reporting)
+✅ Done (basic): P0.1, P0.2, P0.3, P1.4, P1.5, P1.6, P1.7, P2.8, P2.9, P2.10, P3.11, P3.12, P3.13
 
 ### P0 — Foundation (high importance; unblock everything else)
 
@@ -221,15 +219,29 @@ It is **not** a “condition”, toggle, or limitation that prevents using the t
 - QCD eligibility is modeled using whole-year ages (approximation of the 70½ rule).
 - Heirs modeling is deliberately simplified (flat effective tax rate; equal annual distributions; reinvest proceeds in taxable).
 
-12. **Roth 5-year rule tracking**
+12. **Roth 5-year rule tracking** ✅ Done (basic)
 
 - **Why**: Mentioned explicitly; typically matters if you need to withdraw conversion principal soon.
 - **Scope**:
   - Track conversions by year and prevent Roth withdrawals from recently converted principal if within 5 years (or apply penalty model).
 - **Likely files**:
-  - `roth_conversions/projection.py`
+  - `roth_conversions/roth_rules.py` (conversion buckets + withdrawal ordering)
+  - `roth_conversions/projection.py` (apply penalty/prevent + include in taxes/PV)
+  - `roth_conversions/analysis/home_purchase.py` (keep scenario aligned)
+  - `roth_conversions/config.py` + `configs/retirement_config.template.toml` (new knobs)
+  - `roth_conversions/reporting/builder.py` (surface totals)
 
-13. **Asset location / risk: put higher-growth assets in Roth**
+- **Acceptance**:
+  - A “young” household that converts and then withdraws conversion principal soon after shows a non-zero Roth penalty tax (or, under `policy="prevent"`, shifts the spend funding to other sources).
+  - Three Paths reporting includes a “Roth penalty total” column.
+
+**Implementation notes (first-pass / “basic” expectations):**
+
+- Tracks conversion buckets by model year and applies a simplified 10% penalty to withdrawals sourced from “young” conversions when under an approximate qualified age (whole-year, default 60).
+- Optional policy can instead prevent using “young” conversion principal (forces other sources).
+- Does not model contributions vs conversion principal vs earnings precisely (starting Roth is treated as penalty-free basis); the intent is to capture “I need to tap conversion principal soon” risk.
+
+13. **Asset location / risk: put higher-growth assets in Roth** ✅ Done (basic)
 
 - **Why**: Frank’s item #16.
 - **Reality check**:
@@ -237,6 +249,19 @@ It is **not** a “condition”, toggle, or limitation that prevents using the t
   - The missing piece is making this a first-class scenario knob and explaining it in reports.
 - **Possible scope**:
   - Add config presets or scenario runner that compares `roth_return = ira_return` vs `roth_return > ira_return`.
+
+- **Likely files**:
+  - `roth_conversions/analysis/asset_location.py` (scenario runner)
+  - `roth_conversions/reporting/builder.py` (report section)
+  - `roth_conversions/config.py` + `configs/retirement_config.template.toml` (new knobs)
+
+- **Acceptance**:
+  - When `inputs.asset_location.enabled=true`, the report includes an “Asset Location Scenarios” section comparing outcomes under alternate Roth return assumptions.
+
+**Implementation notes (first-pass / “basic” expectations):**
+
+- Added a scenario runner that re-runs Three Paths under alternate Roth return assumptions and renders a report section.
+- This is sensitivity analysis (returns), not a full asset re-allocation optimizer.
 
 ---
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..models import HouseholdInputs
+from ..roth_rules import RothLedger
 from ..irmaa_tables import get_irmaa_addons_monthly
 from ..rmd import required_minimum_distribution
 from ..social_security import taxable_social_security
@@ -42,6 +43,8 @@ def project_with_home_purchase(
     ira = float(inputs.total_pretax)
     roth = float(inputs.total_roth)
     taxable = float(inputs.joint.taxable_accounts)
+
+    roth_ledger = RothLedger(basis_remaining=float(roth), buckets=[])
 
     base_filing_status = str(inputs.household.tax_filing_status)
     tax_policy = inputs.tax_payment_policy
@@ -136,7 +139,29 @@ def project_with_home_purchase(
 
         # Regular spending withdrawals (simple heuristic like the main projection).
         from_taxable = min(remaining_need * 0.5, max(0.0, taxable - float(inputs.plan.minimum_cash_reserve)))
-        from_roth = min(remaining_need * 0.3, roth)
+        from_roth_requested = min(remaining_need * 0.3, roth)
+        roth_penalty_tax = 0.0
+        if bool(inputs.roth_rules.enabled) and from_roth_requested > 0:
+            household_age_years = min(spouse1_age, spouse2_age)
+            actual_from_roth, penalty_base = roth_ledger.withdraw(
+                requested=from_roth_requested,
+                year_index=yr,
+                conversion_wait_years=int(inputs.roth_rules.conversion_wait_years),
+                qualified_age_years=int(inputs.roth_rules.qualified_age_years),
+                household_age_years=int(household_age_years),
+                policy=str(inputs.roth_rules.policy),
+            )
+            from_roth = min(float(actual_from_roth), roth)
+            shortfall = max(0.0, float(from_roth_requested - from_roth))
+            if shortfall > 0:
+                # Cover any prevented Roth spending from IRA.
+                remaining_need += shortfall
+
+            if penalty_base > 0:
+                roth_penalty_tax += float(inputs.roth_rules.penalty_rate) * float(penalty_base)
+        else:
+            from_roth = from_roth_requested
+
         from_ira_spending = max(0.0, remaining_need - from_taxable - from_roth)
 
         # Home purchase drawdown (prioritize taxable above reserve, then Roth, then IRA).
@@ -149,8 +174,25 @@ def project_with_home_purchase(
             home_from_taxable = min(home_cash_need, available_cash)
             remaining_home = home_cash_need - home_from_taxable
             if remaining_home > 0:
-                home_from_roth = min(remaining_home, max(0.0, roth - from_roth))
-                remaining_home -= home_from_roth
+                home_from_roth_requested = min(remaining_home, max(0.0, roth - from_roth))
+                if bool(inputs.roth_rules.enabled) and home_from_roth_requested > 0:
+                    household_age_years = min(spouse1_age, spouse2_age)
+                    actual_home_from_roth, penalty_base = roth_ledger.withdraw(
+                        requested=home_from_roth_requested,
+                        year_index=yr,
+                        conversion_wait_years=int(inputs.roth_rules.conversion_wait_years),
+                        qualified_age_years=int(inputs.roth_rules.qualified_age_years),
+                        household_age_years=int(household_age_years),
+                        policy=str(inputs.roth_rules.policy),
+                    )
+                    home_from_roth = min(float(actual_home_from_roth), max(0.0, roth - from_roth))
+                    remaining_home -= home_from_roth
+
+                    if penalty_base > 0:
+                        roth_penalty_tax += float(inputs.roth_rules.penalty_rate) * float(penalty_base)
+                else:
+                    home_from_roth = home_from_roth_requested
+                    remaining_home -= home_from_roth
             if remaining_home > 0:
                 home_from_ira = remaining_home
             year["home_from_taxable"] = home_from_taxable
@@ -282,6 +324,9 @@ def project_with_home_purchase(
                 filing_status=filing_status,
             )
 
+        if bool(inputs.roth_rules.enabled) and conversion > 0:
+            roth_ledger.deposit_conversion(amount=conversion, year_index=yr)
+
         # Update balances (withdrawals + conversion).
         ira -= total_ira_outflow
         ira -= conversion
@@ -328,6 +373,16 @@ def project_with_home_purchase(
                 marginal_rate=mr_for_grossup,
             )
 
+        if roth_penalty_tax > 0:
+            taxable, ira = pay_tax(
+                taxable=taxable,
+                ira=ira,
+                tax_due=float(roth_penalty_tax),
+                source=str(tax_policy.income_tax_payment_source),
+                minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+                marginal_rate=mr_for_grossup,
+            )
+
         year["rmd"] = total_rmd_this_year
         year["rmd_tax"] = rmd_tax
         year["conversion"] = conversion
@@ -335,6 +390,7 @@ def project_with_home_purchase(
         year["income_tax"] = income_tax
         year["irmaa_cost"] = irmaa_cost
         year["niit_tax"] = niit_tax
+        year["roth_penalty_tax"] = float(roth_penalty_tax)
         year["magi"] = magi_current_year
         year["investment_income"] = investment_income
 

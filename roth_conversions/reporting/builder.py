@@ -6,6 +6,7 @@ import re
 from typing import Iterable, Sequence
 
 from ..analysis.bracket32 import find_tax_breakeven_year
+from ..analysis.asset_location import run_asset_location_scenarios
 from ..analysis.home_purchase import project_with_home_purchase
 from ..analysis.three_paths import run_three_paths
 from ..models import HouseholdInputs, Strategy
@@ -38,6 +39,7 @@ def list_default_report_sections() -> tuple[tuple[str, str], ...]:
         "Executive Summary",
         "Three Paths (A/B/C)",
         "Objective Summary",
+        "Asset Location Scenarios",
         "Longevity Sensitivity",
         "32% Question (Breakeven)",
         "Home Purchase Scenario",
@@ -143,6 +145,12 @@ def build_report(
         else "- NIIT: disabled"
     )
 
+    roth_rules_line = (
+        f"- Roth 5-year rule (conversions): enabled (policy={inputs.roth_rules.policy}, wait_years={int(inputs.roth_rules.conversion_wait_years)}, qualified_age≈{int(inputs.roth_rules.qualified_age_years)})"
+        if bool(inputs.roth_rules.enabled)
+        else "- Roth 5-year rule (conversions): disabled"
+    )
+
     summary_lines = [
         f"- Objective: {objective_pick.objective} (basis={inputs.reporting.value_basis})",
         f"- Best by objective: Path {best_label} ({best_path['path_name']})",
@@ -152,6 +160,7 @@ def build_report(
         widow_line,
         irmaa_line,
         niit_line,
+        roth_rules_line,
         charity_line,
         heirs_line,
         f"- PV of spending (start-year $): {_money(float(pv_result.npv_spending_today))} (discount_rate={float(inputs.household.discount_rate):g})",
@@ -179,7 +188,7 @@ def build_report(
             ),
             tables=(
                 ReportTable(
-                    headers=["Path", "Strategy", "After-tax wealth", "Legacy", "Heirs (after-tax)", "First RMD", "IRMAA total", "NIIT total", "PV taxes (start-year $)"],
+                    headers=["Path", "Strategy", "After-tax wealth", "Legacy", "Heirs (after-tax)", "First RMD", "IRMAA total", "NIIT total", "Roth penalty total", "PV taxes (start-year $)"],
                     rows=(
                         (
                             "A",
@@ -190,6 +199,7 @@ def build_report(
                             _money(paths.path_a["first_rmd"]),
                             _money(float(paths.path_a.get("total_irmaa_cost", 0.0))),
                             _money(float(paths.path_a.get("total_niit_tax", 0.0))),
+                            _money(float(paths.path_a.get("total_roth_penalty_tax", 0.0))),
                             _money(float(paths.path_a.get("npv_taxes_today", 0.0))),
                         ),
                         (
@@ -201,6 +211,7 @@ def build_report(
                             _money(paths.path_b["first_rmd"]),
                             _money(float(paths.path_b.get("total_irmaa_cost", 0.0))),
                             _money(float(paths.path_b.get("total_niit_tax", 0.0))),
+                            _money(float(paths.path_b.get("total_roth_penalty_tax", 0.0))),
                             _money(float(paths.path_b.get("npv_taxes_today", 0.0))),
                         ),
                         (
@@ -212,6 +223,7 @@ def build_report(
                             _money(paths.path_c["first_rmd"]),
                             _money(float(paths.path_c.get("total_irmaa_cost", 0.0))),
                             _money(float(paths.path_c.get("total_niit_tax", 0.0))),
+                            _money(float(paths.path_c.get("total_roth_penalty_tax", 0.0))),
                             _money(float(paths.path_c.get("npv_taxes_today", 0.0))),
                         ),
                     ),
@@ -272,6 +284,40 @@ def build_report(
             ),
         )
     )
+
+    # --- Asset location scenarios ---
+    asset_location_results = run_asset_location_scenarios(inputs=inputs, horizon_years=25)
+    if asset_location_results:
+        rows: list[tuple[str, ...]] = []
+        for res in asset_location_results:
+            # res.paths is a ThreePaths
+            path_rows2 = [("A", res.paths.path_a), ("B", res.paths.path_b), ("C", res.paths.path_c)]
+            pick = pick_best_path(inputs=inputs, labeled_paths=path_rows2)
+            best_lbl, best_p = next((lbl, p) for (lbl, p) in path_rows2 if lbl == pick.best_label)
+            rows.append(
+                (
+                    res.name,
+                    f"{float(res.roth_return):.2%}",
+                    f"{best_lbl} ({best_p['path_name']})",
+                    _basis_money(inputs=inputs, nominal=float(best_p["after_tax"]), real=float(best_p.get("after_tax_today", best_p["after_tax"]))),
+                    _money(float(best_p.get("npv_taxes_today", 0.0))),
+                )
+            )
+
+        sections.append(
+            ReportSection(
+                title="Asset Location Scenarios",
+                paragraphs=(
+                    "Re-runs Three Paths under alternate Roth return assumptions (sensitivity; does not re-allocate balances).",
+                ),
+                tables=(
+                    ReportTable(
+                        headers=["Scenario", "Roth return", "Best path", "Best after-tax", "PV taxes (start-year $)"],
+                        rows=tuple(rows),
+                    ),
+                ),
+            )
+        )
 
     # --- Objective summary ---
     sections.append(
