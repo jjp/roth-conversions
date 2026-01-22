@@ -9,6 +9,7 @@ from ..analysis.bracket32 import find_tax_breakeven_year
 from ..analysis.home_purchase import project_with_home_purchase
 from ..analysis.three_paths import run_three_paths
 from ..models import HouseholdInputs, Strategy
+from ..objectives import pick_best_path
 from ..projection import project_with_tax_tracking
 from .models import ReportDocument, ReportSection, ReportTable
 
@@ -36,6 +37,8 @@ def list_default_report_sections() -> tuple[tuple[str, str], ...]:
     titles = (
         "Executive Summary",
         "Three Paths (A/B/C)",
+        "Objective Summary",
+        "Longevity Sensitivity",
         "32% Question (Breakeven)",
         "Home Purchase Scenario",
     )
@@ -108,7 +111,8 @@ def build_report(
         ("B", paths.path_b),
         ("C", paths.path_c),
     ]
-    best_label, best_path = max(path_rows, key=lambda r: float(r[1]["after_tax"]))
+    objective_pick = pick_best_path(inputs=inputs, labeled_paths=path_rows)
+    best_label, best_path = next((lbl, p) for (lbl, p) in path_rows if lbl == objective_pick.best_label)
 
     # One representative run to surface PV metrics (strategy doesn't matter for spend PV; taxes do).
     # We use a conservative strategy to keep the values stable.
@@ -133,13 +137,21 @@ def build_report(
         if bool(inputs.heirs.enabled)
         else "- Heirs: disabled"
     )
+    niit_line = (
+        f"- NIIT: enabled (realized NII ≈ taxable_return × {float(inputs.niit.nii_fraction_of_return):g} × {float(inputs.niit.realization_fraction):g})"
+        if bool(inputs.niit.enabled)
+        else "- NIIT: disabled"
+    )
 
     summary_lines = [
-        f"- Best after-tax wealth: Path {best_label} ({best_path['path_name']}) at {_basis_money(inputs=inputs, nominal=float(best_path['after_tax']), real=float(best_path.get('after_tax_today', best_path['after_tax'])))}",
+        f"- Objective: {objective_pick.objective} (basis={inputs.reporting.value_basis})",
+        f"- Best by objective: Path {best_label} ({best_path['path_name']})",
+        f"- Best after-tax wealth: Path {max(path_rows, key=lambda r: float(r[1]['after_tax']))[0]} at {_basis_money(inputs=inputs, nominal=float(max(path_rows, key=lambda r: float(r[1]['after_tax']))[1]['after_tax']), real=float(max(path_rows, key=lambda r: float(r[1]['after_tax']))[1].get('after_tax_today', max(path_rows, key=lambda r: float(r[1]['after_tax']))[1]['after_tax'])))}",
         f"- B − A (after-tax): {_basis_money(inputs=inputs, nominal=paths.path_b['after_tax'] - paths.path_a['after_tax'], real=float(paths.path_b.get('after_tax_today', paths.path_b['after_tax']) - float(paths.path_a.get('after_tax_today', paths.path_a['after_tax']))))}",
         f"- C − A (after-tax): {_basis_money(inputs=inputs, nominal=paths.path_c['after_tax'] - paths.path_a['after_tax'], real=float(paths.path_c.get('after_tax_today', paths.path_c['after_tax']) - float(paths.path_a.get('after_tax_today', paths.path_a['after_tax']))))}",
         widow_line,
         irmaa_line,
+        niit_line,
         charity_line,
         heirs_line,
         f"- PV of spending (start-year $): {_money(float(pv_result.npv_spending_today))} (discount_rate={float(inputs.household.discount_rate):g})",
@@ -167,7 +179,7 @@ def build_report(
             ),
             tables=(
                 ReportTable(
-                    headers=["Path", "Strategy", "After-tax wealth", "Legacy", "Heirs (after-tax)", "First RMD", "IRMAA total"],
+                    headers=["Path", "Strategy", "After-tax wealth", "Legacy", "Heirs (after-tax)", "First RMD", "IRMAA total", "NIIT total", "PV taxes (start-year $)"],
                     rows=(
                         (
                             "A",
@@ -177,6 +189,8 @@ def build_report(
                             _basis_money(inputs=inputs, nominal=float(paths.path_a.get("heirs_after_tax", 0.0)), real=float(paths.path_a.get("heirs_after_tax_today", paths.path_a.get("heirs_after_tax", 0.0)))),
                             _money(paths.path_a["first_rmd"]),
                             _money(float(paths.path_a.get("total_irmaa_cost", 0.0))),
+                            _money(float(paths.path_a.get("total_niit_tax", 0.0))),
+                            _money(float(paths.path_a.get("npv_taxes_today", 0.0))),
                         ),
                         (
                             "B",
@@ -186,6 +200,8 @@ def build_report(
                             _basis_money(inputs=inputs, nominal=float(paths.path_b.get("heirs_after_tax", 0.0)), real=float(paths.path_b.get("heirs_after_tax_today", paths.path_b.get("heirs_after_tax", 0.0)))),
                             _money(paths.path_b["first_rmd"]),
                             _money(float(paths.path_b.get("total_irmaa_cost", 0.0))),
+                            _money(float(paths.path_b.get("total_niit_tax", 0.0))),
+                            _money(float(paths.path_b.get("npv_taxes_today", 0.0))),
                         ),
                         (
                             "C",
@@ -195,6 +211,8 @@ def build_report(
                             _basis_money(inputs=inputs, nominal=float(paths.path_c.get("heirs_after_tax", 0.0)), real=float(paths.path_c.get("heirs_after_tax_today", paths.path_c.get("heirs_after_tax", 0.0)))),
                             _money(paths.path_c["first_rmd"]),
                             _money(float(paths.path_c.get("total_irmaa_cost", 0.0))),
+                            _money(float(paths.path_c.get("total_niit_tax", 0.0))),
+                            _money(float(paths.path_c.get("npv_taxes_today", 0.0))),
                         ),
                     ),
                 ),
@@ -254,6 +272,49 @@ def build_report(
             ),
         )
     )
+
+    # --- Objective summary ---
+    sections.append(
+        ReportSection(
+            title="Objective Summary",
+            paragraphs=(
+                f"Objective: {objective_pick.objective}",
+                f"Best by objective: Path {objective_pick.best_label} ({objective_pick.best_path_name})",
+            ),
+        )
+    )
+
+    # --- Longevity sensitivity ---
+    if bool(inputs.reporting.longevity_sensitivity_enabled):
+        horizons = tuple(int(x) for x in inputs.reporting.longevity_horizons_years)
+        rows: list[tuple[str, str, str, str, str]] = []
+        for h in horizons:
+            p = run_three_paths(inputs=inputs, horizon_years=h)
+            picks = pick_best_path(inputs=inputs, labeled_paths=(("A", p.path_a), ("B", p.path_b), ("C", p.path_c)))
+            rows.append(
+                (
+                    str(h),
+                    f"{picks.best_label} ({picks.best_path_name})",
+                    _basis_money(inputs=inputs, nominal=float(p.path_a["after_tax"]), real=float(p.path_a.get("after_tax_today", p.path_a["after_tax"]))),
+                    _basis_money(inputs=inputs, nominal=float(p.path_b["after_tax"]), real=float(p.path_b.get("after_tax_today", p.path_b["after_tax"]))),
+                    _basis_money(inputs=inputs, nominal=float(p.path_c["after_tax"]), real=float(p.path_c.get("after_tax_today", p.path_c["after_tax"]))),
+                )
+            )
+
+        sections.append(
+            ReportSection(
+                title="Longevity Sensitivity",
+                paragraphs=(
+                    "Re-runs Three Paths at multiple horizons.",
+                ),
+                tables=(
+                    ReportTable(
+                        headers=["Horizon (yrs)", "Best", "A after-tax", "B after-tax", "C after-tax"],
+                        rows=tuple(rows),
+                    ),
+                ),
+            )
+        )
 
     # --- 32% question ---
 

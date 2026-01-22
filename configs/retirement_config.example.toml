@@ -14,6 +14,13 @@ discount_rate = 0.0
 [inputs.reporting]
 value_basis = "nominal"
 
+# Objective used to pick/highlight the "best" strategy in reports.
+# Values: "after_tax" | "legacy" | "heirs" | "npv_taxes"
+objective = "after_tax"
+
+longevity_sensitivity_enabled = false
+# longevity_horizons_years = [20, 25, 30, 35]
+
 [inputs.spouse1]
 name = "Spouse 1"
 age = 70
@@ -47,6 +54,11 @@ roth_return = 0.070
 
 [inputs.medicare]
 irmaa_enabled = false
+
+[inputs.taxes]
+niit_enabled = false
+niit_nii_fraction_of_return = 0.70
+niit_realization_fraction = 0.60
 
 [inputs.events]
 widow_event_enabled = false

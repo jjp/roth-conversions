@@ -8,6 +8,7 @@ from roth_conversions.analysis.three_paths import run_three_paths
 from roth_conversions.analysis.bracket32 import find_tax_breakeven_year
 from roth_conversions.analysis.home_purchase import project_with_home_purchase
 from roth_conversions.models import Strategy
+from roth_conversions.objectives import pick_best_path
 from roth_conversions.projection import project_with_tax_tracking
 from roth_conversions.reporting.builder import build_report, list_default_report_sections
 from roth_conversions.reporting.render_markdown import render_markdown
@@ -25,14 +26,23 @@ def cmd_three_paths(args: argparse.Namespace) -> int:
         path_b_years=args.path_b_years,
         path_c_annual=args.path_c_annual,
         path_c_years=args.path_c_years,
+        horizon_years=args.horizon_years,
+    )
+
+    obj = pick_best_path(
+        inputs=inputs,
+        labeled_paths=(("A", paths.path_a), ("B", paths.path_b), ("C", paths.path_c)),
     )
 
     print("\nTHREE PATHS (A/B/C)")
+    print(f"Objective: {obj.objective} (value_basis={inputs.reporting.value_basis})")
     for label, p in [("A", paths.path_a), ("B", paths.path_b), ("C", paths.path_c)]:
         print(
             f"Path {label} ({p['path_name']}): after-tax={_money(p['after_tax'])} | "
             f"legacy={_money(p['legacy'])} | first_rmd={_money(p['first_rmd'])}"
         )
+
+    print(f"Best by objective: Path {obj.best_label} ({obj.best_path_name})")
 
     print(f"\nB vs A delta: {_money(paths.path_b['after_tax'] - paths.path_a['after_tax'])}")
     print(f"C vs A delta: {_money(paths.path_c['after_tax'] - paths.path_a['after_tax'])}")
@@ -137,6 +147,7 @@ def add_roth_subcommands(parent_subparsers: argparse._SubParsersAction) -> None:
     p3.add_argument("--path-b-years", type=int, default=5)
     p3.add_argument("--path-c-annual", type=float, default=150_000)
     p3.add_argument("--path-c-years", type=int, default=10)
+    p3.add_argument("--horizon-years", type=int, default=25)
     p3.set_defaults(func=cmd_three_paths)
 
     p32 = sub.add_parser("32pct", help="Run Chapter 9 32% breakeven question")

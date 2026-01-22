@@ -13,6 +13,14 @@ discount_rate = 0.0
 # "nominal" = future dollars, "real" = start-year (today's) dollars
 value_basis = "nominal"
 
+# Objective used to pick/highlight the "best" strategy in reports.
+# Values: "after_tax" | "legacy" | "heirs" | "npv_taxes"
+objective = "after_tax"
+
+# Optional: run the Three Paths model at multiple horizons.
+longevity_sensitivity_enabled = false
+# longevity_horizons_years = [20, 25, 30, 35]
+
 [inputs.spouse1]
 name = "Spouse 1"
 age = 70
@@ -47,6 +55,16 @@ roth_return = 0.07
 [inputs.medicare]
 # If enabled, applies IRMAA surcharges using pinned SSA/CMS tables and a 2-year lookback MAGI approximation.
 irmaa_enabled = false
+
+[inputs.taxes]
+# Net Investment Income Tax (NIIT): simplified model based on taxable-account investment income.
+niit_enabled = false
+
+# NIIT realism knobs (only used when niit_enabled=true):
+# - niit_nii_fraction_of_return: portion of the modeled taxable return treated as NII (div/interest/realized gains)
+# - niit_realization_fraction: portion of that NII assumed realized each year
+niit_nii_fraction_of_return = 0.70
+niit_realization_fraction = 0.60
 
 [inputs.events]
 # Widow modeling: from widow_year onward, switches to Single filing status and uses survivor SS (max of two).

@@ -11,6 +11,7 @@ from .irmaa_tables import get_irmaa_addons_monthly
 from .withdrawal_policy import pay_tax
 from .npv import npv
 from .heirs import simulate_inherited_distribution_after_tax, simulate_inherited_roth_after_tax
+from .niit import calculate_niit
 
 
 STANDARD_DEDUCTION_MFJ_APPROX_2025 = 30_000.0
@@ -54,6 +55,7 @@ def project_with_tax_tracking(
     cumulative_conv_tax = 0.0
     cumulative_rmd_tax = 0.0
     cumulative_irmaa_cost = 0.0
+    cumulative_niit_tax = 0.0
     total_conversions = 0.0
     total_rmds = 0.0
 
@@ -95,6 +97,10 @@ def project_with_tax_tracking(
         # We'll compute MAGI after we compute taxable SS for the final income picture.
         irmaa_cost = 0.0
 
+        # NIIT: approximate net investment income (NII) from the taxable account return.
+        # Important: portfolio return != NII; we approximate realized NII using configurable scalars.
+        investment_income = 0.0
+
         income_need_multiplier = float(widow_event.income_need_multiplier) if widow_active else 1.0
         income_need = float(inputs.plan.annual_income_need) * inflation_multiplier * income_need_multiplier
 
@@ -133,6 +139,12 @@ def project_with_tax_tracking(
 
         taxable_ira_withdrawal = max(0.0, total_rmd - qcd_from_rmd) + from_ira_extra
         total_ira_outflow = total_rmd + from_ira_extra + qcd_extra
+
+        taxable_balance_for_nii = max(0.0, taxable - from_taxable)
+        if bool(getattr(inputs, "niit", None)) and bool(inputs.niit.enabled):
+            nii_fraction = float(getattr(inputs.niit, "nii_fraction_of_return", 0.70))
+            realization = float(getattr(inputs.niit, "realization_fraction", 0.60))
+            investment_income = max(0.0, taxable_balance_for_nii * taxable_r * nii_fraction * realization)
 
         # Compute SS taxable using IRS provisional income rules.
         # Note: taxable SS depends on other income (IRA withdrawals, conversions), so we
@@ -212,8 +224,17 @@ def project_with_tax_tracking(
         )
 
         # Persist MAGI estimate for lookback calculations.
-        magi_current_year = float(taxable_ira_withdrawal) + float(conversion) + float(ss_taxable_final)
+        magi_current_year = float(taxable_ira_withdrawal) + float(conversion) + float(ss_taxable_final) + float(investment_income)
         magi_by_calendar_year[calendar_year] = magi_current_year
+
+        niit_tax = 0.0
+        if bool(getattr(inputs, "niit", None)) and bool(inputs.niit.enabled):
+            niit_tax = calculate_niit(
+                magi=magi_current_year,
+                net_investment_income=investment_income,
+                filing_status=filing_status,
+            )
+            cumulative_niit_tax += niit_tax
 
         if bool(inputs.medicare.irmaa_enabled):
             lookback_year = calendar_year - 2
@@ -235,7 +256,7 @@ def project_with_tax_tracking(
             rmd_tax = 0.0
 
         cumulative_rmd_tax += rmd_tax
-        cumulative_total_tax = cumulative_conv_tax + cumulative_rmd_tax
+        cumulative_total_tax = cumulative_conv_tax + cumulative_rmd_tax + cumulative_niit_tax
 
         # Update balances
         ira -= total_ira_outflow
@@ -260,6 +281,16 @@ def project_with_tax_tracking(
             minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
             marginal_rate=mr_for_grossup,
         )
+
+        if niit_tax > 0:
+            taxable, ira = pay_tax(
+                taxable=taxable,
+                ira=ira,
+                tax_due=niit_tax,
+                source=str(tax_policy.income_tax_payment_source),
+                minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+                marginal_rate=mr_for_grossup,
+            )
 
         # Treat IRMAA as an annual expense paid from taxable (then IRA spillover).
         if irmaa_cost > 0:
@@ -301,6 +332,9 @@ def project_with_tax_tracking(
                 cumulative_rmd_tax=cumulative_rmd_tax,
                 cumulative_total_tax=cumulative_total_tax,
                 irmaa_cost=irmaa_cost,
+                niit_tax=niit_tax,
+                magi=magi_current_year,
+                investment_income=investment_income,
                 income_need=income_need,
                 inflation_multiplier=inflation_multiplier,
                 qcd=qcd,
@@ -338,7 +372,7 @@ def project_with_tax_tracking(
 
     spending_today_series = [float(y.income_need) / float(y.inflation_multiplier) for y in yearly]
     taxes_today_series = [
-        (float(y.income_tax) + float(y.conversion_tax) + float(y.irmaa_cost)) / float(y.inflation_multiplier)
+        (float(y.income_tax) + float(y.conversion_tax) + float(y.irmaa_cost) + float(y.niit_tax)) / float(y.inflation_multiplier)
         for y in yearly
     ]
 
@@ -351,11 +385,12 @@ def project_with_tax_tracking(
         total_conv_tax=cumulative_conv_tax,
         total_rmds=total_rmds,
         total_rmd_tax=cumulative_rmd_tax,
-        total_lifetime_tax=cumulative_conv_tax + cumulative_rmd_tax,
+        total_lifetime_tax=cumulative_conv_tax + cumulative_rmd_tax + cumulative_niit_tax,
         after_tax=after_tax,
         legacy=legacy,
         yearly=tuple(yearly),
         total_irmaa_cost=cumulative_irmaa_cost,
+        total_niit_tax=cumulative_niit_tax,
         after_tax_today=after_tax_today,
         legacy_today=legacy_today,
         npv_spending_today=npv_spending_today,
@@ -394,6 +429,7 @@ def project_path(
     total_rmds = 0.0
     total_rmd_tax = 0.0
     total_irmaa_cost = 0.0
+    total_niit_tax = 0.0
 
     yearly_details: list[dict] = []
 
@@ -452,6 +488,13 @@ def project_path(
         from_ira_extra = max(0.0, remaining_need - from_taxable - from_roth)
         taxable_ira_withdrawal = max(0.0, total_rmd - qcd_from_rmd) + from_ira_extra
         total_ira_outflow = total_rmd + from_ira_extra + qcd_extra
+
+        taxable_balance_for_nii = max(0.0, taxable - from_taxable)
+        investment_income = 0.0
+        if bool(getattr(inputs, "niit", None)) and bool(inputs.niit.enabled):
+            nii_fraction = float(getattr(inputs.niit, "nii_fraction_of_return", 0.70))
+            realization = float(getattr(inputs.niit, "realization_fraction", 0.60))
+            investment_income = max(0.0, taxable_balance_for_nii * float(inputs.assumptions.taxable_return) * nii_fraction * realization)
 
         ss_taxable_no_conv = taxable_social_security(
             total_benefits=total_ss,
@@ -524,7 +567,7 @@ def project_path(
 
         # IRMAA (Medicare premium surcharges): 2-year lookback MAGI.
         irmaa_cost = 0.0
-        magi_current_year = float(taxable_ira_withdrawal) + float(conversion) + float(ss_taxable_final)
+        magi_current_year = float(taxable_ira_withdrawal) + float(conversion) + float(ss_taxable_final) + float(investment_income)
         magi_by_calendar_year[calendar_year] = magi_current_year
         if bool(inputs.medicare.irmaa_enabled):
             lookback_magi = float(magi_by_calendar_year.get(calendar_year - 2, magi_current_year))
@@ -536,6 +579,15 @@ def project_path(
             covered_people = 2 if filing_status == "MFJ" else 1
             irmaa_cost = (part_b_add + part_d_add) * 12.0 * float(covered_people)
             total_irmaa_cost += irmaa_cost
+
+        niit_tax = 0.0
+        if bool(getattr(inputs, "niit", None)) and bool(inputs.niit.enabled):
+            niit_tax = calculate_niit(
+                magi=magi_current_year,
+                net_investment_income=investment_income,
+                filing_status=filing_status,
+            )
+            total_niit_tax += niit_tax
 
         rmd_taxable = max(0.0, total_rmd - qcd_from_rmd)
         if taxable_ira_withdrawal > 0:
@@ -568,6 +620,16 @@ def project_path(
             minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
             marginal_rate=mr_for_grossup,
         )
+
+        if niit_tax > 0:
+            taxable, ira = pay_tax(
+                taxable=taxable,
+                ira=ira,
+                tax_due=niit_tax,
+                source=str(tax_policy.income_tax_payment_source),
+                minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+                marginal_rate=mr_for_grossup,
+            )
 
         if irmaa_cost > 0:
             taxable, ira = pay_tax(
@@ -605,6 +667,9 @@ def project_path(
                 "conversion_tax": conversion_tax,
                 "income_tax": income_tax,
                 "irmaa_cost": irmaa_cost,
+                "niit_tax": niit_tax,
+                "magi": magi_current_year,
+                "investment_income": investment_income,
                 "ira_end": ira,
                 "roth_end": roth,
                 "taxable_end": taxable,
@@ -639,6 +704,14 @@ def project_path(
     legacy_today = legacy / end_inflation_multiplier
     heirs_after_tax_today = heirs_after_tax / end_inflation_multiplier
 
+    discount_rate = float(inputs.household.discount_rate)
+    taxes_today_series = [
+        (float(row.get("income_tax", 0.0)) + float(row.get("conversion_tax", 0.0)) + float(row.get("irmaa_cost", 0.0)) + float(row.get("niit_tax", 0.0)))
+        / float(row.get("inflation_multiplier", 1.0) or 1.0)
+        for row in yearly_details
+    ]
+    npv_taxes_today = npv(taxes_today_series, discount_rate=discount_rate)
+
     # "First RMD" = first year with a non-zero RMD (including year 1 if already eligible).
     first_rmd = 0.0
     for row in yearly_details:
@@ -655,6 +728,7 @@ def project_path(
         "total_rmds": total_rmds,
         "total_rmd_tax": total_rmd_tax,
         "total_irmaa_cost": total_irmaa_cost,
+        "total_niit_tax": total_niit_tax,
         "ira": ira,
         "roth": roth,
         "taxable": taxable,
@@ -662,6 +736,7 @@ def project_path(
         "legacy": legacy,
         "after_tax_today": after_tax_today,
         "legacy_today": legacy_today,
+        "npv_taxes_today": npv_taxes_today,
         "heirs_after_tax": heirs_after_tax,
         "heirs_after_tax_today": heirs_after_tax_today,
         "first_rmd": first_rmd,

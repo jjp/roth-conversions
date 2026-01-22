@@ -29,6 +29,28 @@ class Household:
 @dataclass(frozen=True)
 class ReportingInputs:
     value_basis: str = "nominal"  # "nominal" | "real" (start-year dollars)
+    objective: str = "after_tax"  # "after_tax" | "legacy" | "heirs" | "npv_taxes"
+    longevity_sensitivity_enabled: bool = False
+    longevity_horizons_years: tuple[int, ...] = (20, 25, 30, 35)
+
+
+@dataclass(frozen=True)
+class NIITInputs:
+    """Net Investment Income Tax (NIIT) assumptions.
+
+    This is a simplified model:
+    - NII is approximated from the taxable account's modeled investment return.
+    - MAGI is approximated consistently with our IRMAA model (and includes taxable investment income).
+    """
+
+    enabled: bool = False
+
+    # NIIT is based on *net investment income* (NII), which is not the same as total portfolio return.
+    # We approximate NII from the modeled taxable return with two scalars:
+    # - nii_fraction_of_return: portion of the taxable return that behaves like NII (div/interest/realized gains)
+    # - realization_fraction: how much of that NII is realized in a given year (vs deferred/unrealized)
+    nii_fraction_of_return: float = 0.70
+    realization_fraction: float = 0.60
 
 
 @dataclass(frozen=True)
@@ -124,6 +146,7 @@ class HouseholdInputs:
     medicare: MedicareInputs = MedicareInputs()
     widow_event: WidowEventInputs = WidowEventInputs()
     reporting: ReportingInputs = ReportingInputs()
+    niit: NIITInputs = NIITInputs()
     charity: CharitableGivingInputs = CharitableGivingInputs()
     heirs: HeirsInputs = HeirsInputs()
 
@@ -181,6 +204,9 @@ class ProjectionYear:
     cumulative_rmd_tax: float
     cumulative_total_tax: float
     irmaa_cost: float = 0.0
+    niit_tax: float = 0.0
+    magi: float = 0.0
+    investment_income: float = 0.0
     income_need: float = 0.0
     inflation_multiplier: float = 1.0
     qcd: float = 0.0
@@ -199,6 +225,7 @@ class ProjectionResult:
     legacy: float
     yearly: Sequence[ProjectionYear]
     total_irmaa_cost: float = 0.0
+    total_niit_tax: float = 0.0
     after_tax_today: float = 0.0
     legacy_today: float = 0.0
     npv_spending_today: float = 0.0

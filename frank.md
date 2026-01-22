@@ -30,9 +30,19 @@ Frank’s note is a decision framework, not a bug list. The “features” it im
   - Loader: `roth_conversions/tax_tables.py`
 - Social Security taxable benefits now use the **provisional income** method (instead of “always 85% taxable”).
   - See `roth_conversions/social_security.py` and usage in `roth_conversions/projection.py`.
-- No NIIT handling yet.
+- NIIT is supported (still simplified): uses NIIT thresholds and a configurable realized-NII approximation from taxable returns.
+  - See `roth_conversions/niit.py` and NIIT integration in `roth_conversions/projection.py`.
 - “After-tax wealth” / “legacy” are heuristics (e.g., `ira * 0.75`, `taxable * 0.92`, `ira * (1-0.28)`), not a modeled tax event.
 - Time value of money is now supported (basic): discount rate + PV of spending/taxes and real vs nominal output basis.
+
+### What “basic” means (and what it does _not_ mean)
+
+When an item is marked **Done (basic)**, it means:
+
+- The feature exists end-to-end (config → projection → report), and is useful for comparisons.
+- The feature uses _explicit simplifying assumptions_ (documented in code/config) rather than a fully detailed tax/benefits implementation.
+
+It is **not** a “condition”, toggle, or limitation that prevents using the tool. It’s a transparency label so we know where realism can be tightened next.
 
 ---
 
@@ -40,9 +50,9 @@ Frank’s note is a decision framework, not a bug list. The “features” it im
 
 ## Current status (quick check)
 
-✅ Done (basic): P0.1, P0.2, P1.4, P1.6, P1.7, P2.8, P2.9, P3.11
+✅ Done (basic): P0.1, P0.2, P0.3, P1.4, P1.5, P1.6, P1.7, P2.8, P2.9, P2.10, P3.11
 
-⏳ Not done yet: P0.3 (objectives), P1.5 (NIIT), P2.10 (longevity sensitivity), P3.12 (Roth conversion 5-year rule tracking), P3.13 (asset location scenarios/reporting)
+⏳ Not done yet: P3.12 (Roth conversion 5-year rule tracking), P3.13 (asset location scenarios/reporting)
 
 ### P0 — Foundation (high importance; unblock everything else)
 
@@ -74,6 +84,7 @@ Frank’s note is a decision framework, not a bug list. The “features” it im
   - Unit tests for a few representative cases (low provisional income → 0% taxable; mid; high → ~85%).
 
 3. **Make objectives explicit and report them**
+   ✅ Done (basic)
 
 - **Why**: Frank’s first section is “what is my end objective?” and the tool should reflect that.
 - **Scope**:
@@ -94,7 +105,7 @@ Frank’s note is a decision framework, not a bug list. The “features” it im
 ### P1 — High-impact realism (still high importance)
 
 4. **Model Medicare IRMAA as an explicit cost**
-✅ Done (basic)
+   ✅ Done (basic)
 
 - **Why**: Frank calls this out as a key Roth conversion risk; conversions can spike MAGI and trigger IRMAA tiers.
 - **Scope**:
@@ -109,6 +120,7 @@ Frank’s note is a decision framework, not a bug list. The “features” it im
   - A scenario with high conversions shows higher IRMAA costs than no-conversion.
 
 5. **Model NIIT (Net Investment Income Tax) where applicable**
+   ✅ Done (basic)
 
 - **Why**: Frank lists NIIT thresholds; important for higher-income households and high taxable returns.
 - **Scope**:
@@ -164,7 +176,7 @@ Frank’s note is a decision framework, not a bug list. The “features” it im
   - `maximize_after_tax_income_npv` prefers earlier cash flows when discount_rate > 0.
 
 9. **QCD support (age 70½+)**
-✅ Done (basic)
+   ✅ Done (basic)
 
 - **Why**: Frank’s guidance: don’t convert dollars you’ll later QCD.
 - **Scope**:
@@ -177,6 +189,7 @@ Frank’s note is a decision framework, not a bug list. The “features” it im
   - With QCD enabled, taxable income and taxes drop vs baseline at same RMD.
 
 10. **Life expectancy / longevity sensitivity**
+    ✅ Done (basic)
 
 - **Why**: Frank emphasizes “Roth conversions pay off the longer you live.”
 - **Scope options**:
@@ -191,7 +204,7 @@ Frank’s note is a decision framework, not a bug list. The “features” it im
 ### P3 — Advanced / nice-to-have (lower importance unless your use-case demands it)
 
 11. **Heirs’ tax modeling (5-year + 10‑year inherited IRA rules, heirs’ bracket)**
-✅ Done (basic)
+    ✅ Done (basic)
 
 - **Why**: Frank asks about heirs in equal/higher brackets.
 - **Scope**:
@@ -237,7 +250,7 @@ Frank’s note is a decision framework, not a bug list. The “features” it im
 6. P2.8 NPV + real vs nominal dollars ✅ Done (basic)
 7. P2.9 QCD ✅ Done (basic)
 8. P3.11 Heirs (5-year/10-year) ✅ Done (basic)
-9. P0.3 objectives + report them (next)
+9. P0.3 objectives + report them ✅ Done (basic)
 10. P1.5 NIIT (next)
 11. P2.10 longevity sensitivity (optional)
 

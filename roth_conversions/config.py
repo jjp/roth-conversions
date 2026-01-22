@@ -17,6 +17,7 @@ from .models import (
     HeirsInputs,
     JointAccounts,
     MedicareInputs,
+    NIITInputs,
     PlanInputs,
     ReportingInputs,
     ReturnAssumptions,
@@ -59,11 +60,20 @@ def parse_inputs(cfg: dict[str, Any]) -> HouseholdInputs:
     reporting = inputs.get("reporting", {})
     reporting_inputs = ReportingInputs(
         value_basis=str(reporting.get("value_basis", "nominal")),
+        objective=str(reporting.get("objective", "after_tax")),
+        longevity_sensitivity_enabled=bool(reporting.get("longevity_sensitivity_enabled", False)),
+        longevity_horizons_years=tuple(int(x) for x in reporting.get("longevity_horizons_years", (20, 25, 30, 35))),
     )
     if reporting_inputs.value_basis not in {"nominal", "real"}:
         raise ValueError(
             f"invalid inputs.reporting.value_basis={reporting_inputs.value_basis!r}; expected 'nominal' or 'real'"
         )
+    if reporting_inputs.objective not in {"after_tax", "legacy", "heirs", "npv_taxes"}:
+        raise ValueError(
+            f"invalid inputs.reporting.objective={reporting_inputs.objective!r}; expected 'after_tax', 'legacy', 'heirs', or 'npv_taxes'"
+        )
+    if any(int(x) <= 0 for x in reporting_inputs.longevity_horizons_years):
+        raise ValueError("inputs.reporting.longevity_horizons_years must contain only positive integers")
 
     events = inputs.get("events", {})
     widow_event_enabled = bool(events.get("widow_event_enabled", False))
@@ -90,6 +100,17 @@ def parse_inputs(cfg: dict[str, Any]) -> HouseholdInputs:
     medicare_inputs = MedicareInputs(
         irmaa_enabled=bool(medicare.get("irmaa_enabled", False)),
     )
+
+    taxes = inputs.get("taxes", {})
+    niit_inputs = NIITInputs(
+        enabled=bool(taxes.get("niit_enabled", False)),
+        nii_fraction_of_return=float(taxes.get("niit_nii_fraction_of_return", 0.70)),
+        realization_fraction=float(taxes.get("niit_realization_fraction", 0.60)),
+    )
+    if not (0.0 <= float(niit_inputs.nii_fraction_of_return) <= 1.0):
+        raise ValueError("inputs.taxes.niit_nii_fraction_of_return must be between 0 and 1")
+    if not (0.0 <= float(niit_inputs.realization_fraction) <= 1.0):
+        raise ValueError("inputs.taxes.niit_realization_fraction must be between 0 and 1")
 
     withdrawal_policy = inputs.get("withdrawal_policy", {})
     tax_payment_policy = TaxPaymentPolicy(
@@ -176,6 +197,7 @@ def parse_inputs(cfg: dict[str, Any]) -> HouseholdInputs:
         medicare=medicare_inputs,
         widow_event=widow_event,
         reporting=reporting_inputs,
+        niit=niit_inputs,
         charity=charity_inputs,
         heirs=heirs_inputs,
     )

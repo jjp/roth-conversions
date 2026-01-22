@@ -9,6 +9,7 @@ from ..social_security import taxable_social_security
 from ..tax import calculate_tax_ordinary_income, marginal_rate_ordinary_income
 from ..tax_tables import get_bracket_ceiling, get_standard_deduction
 from ..withdrawal_policy import pay_tax
+from ..niit import calculate_niit
 
 
 @dataclass(frozen=True)
@@ -250,9 +251,17 @@ def project_with_home_purchase(
         rmd_tax = (income_tax * (rmd_taxable / taxable_ira_withdrawal)) if taxable_ira_withdrawal > 0 else 0.0
         total_rmd_tax += rmd_tax
 
+        # NIIT: approximate *realized* net investment income (NII) from taxable investment return.
+        taxable_balance_for_nii = max(0.0, float(year.get("taxable_start", taxable)) - float(from_taxable) - float(home_from_taxable))
+        investment_income = 0.0
+        if bool(getattr(inputs, "niit", None)) and bool(inputs.niit.enabled):
+            nii_fraction = float(getattr(inputs.niit, "nii_fraction_of_return", 0.70))
+            realization = float(getattr(inputs.niit, "realization_fraction", 0.60))
+            investment_income = max(0.0, taxable_balance_for_nii * float(inputs.assumptions.taxable_return) * nii_fraction * realization)
+
         # IRMAA (optional).
         irmaa_cost = 0.0
-        magi_current_year = float(taxable_ira_withdrawal) + float(conversion) + float(ss_taxable_final)
+        magi_current_year = float(taxable_ira_withdrawal) + float(conversion) + float(ss_taxable_final) + float(investment_income)
         magi_by_calendar_year[calendar_year] = magi_current_year
         if bool(inputs.medicare.irmaa_enabled):
             lookback_magi = float(magi_by_calendar_year.get(calendar_year - 2, magi_current_year))
@@ -264,6 +273,14 @@ def project_with_home_purchase(
             covered_people = 2 if filing_status == "MFJ" else 1
             irmaa_cost = (part_b_add + part_d_add) * 12.0 * float(covered_people)
             total_irmaa_cost += irmaa_cost
+
+        niit_tax = 0.0
+        if bool(getattr(inputs, "niit", None)) and bool(inputs.niit.enabled):
+            niit_tax = calculate_niit(
+                magi=magi_current_year,
+                net_investment_income=investment_income,
+                filing_status=filing_status,
+            )
 
         # Update balances (withdrawals + conversion).
         ira -= total_ira_outflow
@@ -292,6 +309,15 @@ def project_with_home_purchase(
             minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
             marginal_rate=mr_for_grossup,
         )
+        if niit_tax > 0:
+            taxable, ira = pay_tax(
+                taxable=taxable,
+                ira=ira,
+                tax_due=niit_tax,
+                source=str(tax_policy.income_tax_payment_source),
+                minimum_cash_reserve=float(inputs.plan.minimum_cash_reserve),
+                marginal_rate=mr_for_grossup,
+            )
         if irmaa_cost > 0:
             taxable, ira = pay_tax(
                 taxable=taxable,
@@ -308,6 +334,9 @@ def project_with_home_purchase(
         year["conv_tax"] = conversion_tax
         year["income_tax"] = income_tax
         year["irmaa_cost"] = irmaa_cost
+        year["niit_tax"] = niit_tax
+        year["magi"] = magi_current_year
+        year["investment_income"] = investment_income
 
         # Growth
         ira *= (1.0 + float(inputs.assumptions.ira_return))
