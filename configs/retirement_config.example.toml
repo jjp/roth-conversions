@@ -8,7 +8,7 @@
 
 [inputs.household]
 tax_filing_status = "MFJ"
-start_year = 2025
+start_year = 2026
 discount_rate = 0.0
 
 [inputs.reporting]
@@ -55,10 +55,35 @@ roth_return = 0.070
 [inputs.medicare]
 irmaa_enabled = false
 
+# If enabled, applies the standard Medicare Part B base premium using pinned SSA/CMS tables.
+part_b_base_premium_enabled = false
+
+# Optional override for number of covered people used for Medicare costs (Part B base premium and IRMAA).
+# If omitted, defaults to 2 for MFJ and 1 otherwise.
+# covered_people = 2
+
 [inputs.taxes]
 niit_enabled = false
 niit_nii_fraction_of_return = 0.70
 niit_realization_fraction = 0.60
+
+# Simplified state income tax (planning): flat effective rate applied to a chosen base.
+state_tax_enabled = false
+state_tax_rate = 0.0
+
+# Base for state flat tax:
+# - "agi" uses the model's internal AGI/MAGI approximation
+# - "taxable_income" uses federal taxable income (after standard deduction)
+state_tax_base = "agi"
+
+# Optional: model qualified dividends and long-term capital gains (start-year dollars).
+# These are taxed at preferential rates (0%/15%/20%) using pinned IRS thresholds and worksheet-style stacking.
+qualified_dividends_annual = 0.0
+long_term_capital_gains_annual = 0.0
+
+# Tier A itemized deductions (planning): if enabled, deduction = max(standard deduction, itemized_deductions_annual)
+itemized_deductions_enabled = false
+itemized_deductions_annual = 0.0
 
 [inputs.events]
 widow_event_enabled = false
@@ -81,3 +106,14 @@ qcd_annual_cap_per_person = 100000.0
 enabled = false
 distribution_years = 10
 heir_tax_rate = 0.30
+
+[inputs.roth_rules]
+enabled = false
+conversion_wait_years = 5
+qualified_age_years = 60
+penalty_rate = 0.10
+policy = "penalty"  # "penalty" | "prevent"
+
+[inputs.asset_location]
+enabled = false
+roth_return_deltas = [0.00, 0.01, 0.02]

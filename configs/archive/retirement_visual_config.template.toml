@@ -1,9 +1,7 @@
 # Template config for inputs/knobs found in retirement_visual.ipynb.
 #
-# Notes
-# - This notebook duplicates many household inputs, plus adds scenario comparison knobs
-#   (optimistic/moderate/conservative return variants).
-# - The refactored library prefers retirement_config.template.toml (HouseholdInputs) for core inputs.
+# Archived: this template is from a notebook-era config schema and is not aligned with
+# the refactored `retirement_toolkit` config format (see configs/retirement_config.template.toml).
 
 [household]
 base_year = 2025

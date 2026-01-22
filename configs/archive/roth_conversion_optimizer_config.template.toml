@@ -1,9 +1,7 @@
 # Template config for inputs/knobs found in roth_conversion_optimizer.ipynb.
 #
-# Notes
-# - This notebook introduces additional model knobs (state tax, retirement ages, bracket targeting).
-# - It appears to contain additional optimizer/strategy-search logic beyond the current refactored library.
-#   This template captures the parameters, but the optimization engine itself may need a dedicated module.
+# Archived: this template is from the older optimizer notebook and is not aligned with
+# the refactored `retirement_toolkit` config schema.
 
 [household]
 base_year = 2025

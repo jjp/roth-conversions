@@ -67,8 +67,8 @@ The primary CLI is now `retirement-toolkit` (namespaced to make room for additio
 Additional notebook-derived config templates (for migration) live at:
 
 - `configs/retirement_story_config.template.toml`
-- `configs/retirement_visual_config.template.toml`
-- `configs/roth_conversion_optimizer_config.template.toml`
+- `configs/archive/retirement_visual_config.template.toml`
+- `configs/archive/roth_conversion_optimizer_config.template.toml`
 
 ### Run the CLI
 

@@ -1,0 +1,96 @@
+# Scenario example ("Roth conversions likely don't make sense")
+# Heirs are modeled with a low effective tax rate, which can make leaving assets in a traditional IRA
+# more attractive than paying higher taxes today via Roth conversions.
+
+[inputs.household]
+tax_filing_status = "MFJ"
+start_year = 2026
+discount_rate = 0.0
+
+[inputs.reporting]
+value_basis = "nominal"
+# This objective focuses on heirs outcomes.
+objective = "heirs"
+longevity_sensitivity_enabled = false
+
+[inputs.spouse1]
+name = "Spouse 1"
+age = 75
+traditional_ira = 2_300_000
+sep_ira = 0
+roth_ira = 0
+ss_start_age = 70
+ss_annual = 48_000
+
+[inputs.spouse2]
+name = "Spouse 2"
+age = 73
+traditional_ira = 1_700_000
+sep_ira = 0
+roth_ira = 0
+ss_start_age = 70
+ss_annual = 32_000
+
+[inputs.joint]
+# Minimal taxable liquidity increases the chance conversion taxes must be paid from IRA.
+taxable_accounts = 150_000
+
+[inputs.plan]
+monthly_income_need = 14_000
+minimum_cash_reserve = 100_000
+
+[inputs.assumptions]
+inflation_rate = 0.025
+taxable_return = 0.06
+ira_return = 0.06
+roth_return = 0.06
+
+[inputs.medicare]
+irmaa_enabled = true
+part_b_base_premium_enabled = true
+
+[inputs.taxes]
+niit_enabled = false
+niit_nii_fraction_of_return = 0.70
+niit_realization_fraction = 0.60
+
+state_tax_enabled = false
+state_tax_rate = 0.0
+state_tax_base = "agi"
+
+qualified_dividends_annual = 0.0
+long_term_capital_gains_annual = 0.0
+
+itemized_deductions_enabled = false
+itemized_deductions_annual = 0.0
+
+[inputs.events]
+widow_event_enabled = false
+
+[inputs.withdrawal_policy]
+# Paying taxes from IRA can make conversions even less attractive in this scenario.
+income_tax_payment_source = "ira"
+conversion_tax_payment_source = "ira"
+
+[inputs.charity]
+enabled = false
+annual_amount = 0.0
+use_qcd = true
+qcd_eligible_age = 71
+qcd_annual_cap_per_person = 100000.0
+
+[inputs.heirs]
+enabled = true
+distribution_years = 10
+heir_tax_rate = 0.10
+
+[inputs.roth_rules]
+enabled = false
+conversion_wait_years = 5
+qualified_age_years = 60
+penalty_rate = 0.10
+policy = "penalty"
+
+[inputs.asset_location]
+enabled = false
+roth_return_deltas = [0.00, 0.01, 0.02]

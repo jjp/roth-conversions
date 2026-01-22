@@ -1,0 +1,36 @@
+# Minimal config example for a meaningful Roth conversion analysis.
+#
+# Goal: specify only the required fields to run `three-paths` / `report`, while still
+# allowing conversions (by having some taxable liquidity above the cash reserve).
+
+[inputs.household]
+tax_filing_status = "MFJ"
+start_year = 2026
+
+[inputs.spouse1]
+name = "Spouse 1"
+age = 60
+traditional_ira = 800_000
+ss_start_age = 70
+ss_annual = 0
+
+[inputs.spouse2]
+name = "Spouse 2"
+age = 60
+traditional_ira = 800_000
+ss_start_age = 70
+ss_annual = 0
+
+[inputs.joint]
+# Small taxable balance so the model can pay conversion taxes from taxable.
+taxable_accounts = 150_000
+
+[inputs.plan]
+monthly_income_need = 7_500
+minimum_cash_reserve = 75_000
+
+[inputs.assumptions]
+inflation_rate = 0.025
+taxable_return = 0.06
+ira_return = 0.06
+roth_return = 0.07

@@ -1,0 +1,97 @@
+# Scenario example
+# Widow event occurs a few years into the projection.
+# Useful to see the MFJ -> Single filing-status change and survivor SS behavior.
+
+[inputs.household]
+tax_filing_status = "MFJ"
+start_year = 2026
+discount_rate = 0.0
+
+[inputs.reporting]
+value_basis = "nominal"
+objective = "after_tax"
+longevity_sensitivity_enabled = false
+
+[inputs.spouse1]
+name = "Spouse 1"
+age = 70
+traditional_ira = 1_200_000
+sep_ira = 0
+roth_ira = 150_000
+ss_start_age = 70
+ss_annual = 48_000
+
+[inputs.spouse2]
+name = "Spouse 2"
+age = 68
+traditional_ira = 800_000
+sep_ira = 0
+roth_ira = 150_000
+ss_start_age = 70
+ss_annual = 32_000
+
+[inputs.joint]
+taxable_accounts = 600_000
+
+[inputs.plan]
+monthly_income_need = 11_000
+minimum_cash_reserve = 100_000
+
+[inputs.assumptions]
+inflation_rate = 0.025
+taxable_return = 0.06
+ira_return = 0.06
+roth_return = 0.07
+
+[inputs.medicare]
+irmaa_enabled = true
+part_b_base_premium_enabled = true
+
+[inputs.taxes]
+niit_enabled = false
+niit_nii_fraction_of_return = 0.70
+niit_realization_fraction = 0.60
+
+state_tax_enabled = false
+state_tax_rate = 0.0
+state_tax_base = "agi"
+
+qualified_dividends_annual = 0.0
+long_term_capital_gains_annual = 0.0
+
+itemized_deductions_enabled = false
+itemized_deductions_annual = 0.0
+
+[inputs.events]
+widow_event_enabled = true
+widow_year = 2029
+survivor = "spouse1"
+# Often expenses drop after the first death; set to 1.0 if you prefer no change.
+income_need_multiplier = 0.85
+
+[inputs.withdrawal_policy]
+income_tax_payment_source = "taxable"
+conversion_tax_payment_source = "taxable"
+
+[inputs.charity]
+enabled = false
+annual_amount = 0.0
+use_qcd = true
+qcd_eligible_age = 71
+qcd_annual_cap_per_person = 100000.0
+
+[inputs.heirs]
+enabled = false
+distribution_years = 10
+heir_tax_rate = 0.30
+
+[inputs.roth_rules]
+enabled = false
+conversion_wait_years = 5
+qualified_age_years = 60
+penalty_rate = 0.10
+policy = "penalty"
+
+[inputs.asset_location]
+enabled = false
+roth_return_deltas = [0.00, 0.01, 0.02]
