@@ -82,6 +82,15 @@ state_tax_rate = 0.0
 # - "taxable_income" uses federal taxable income (after standard deduction)
 state_tax_base = "agi"
 
+# Optional: model qualified dividends and long-term capital gains (start-year dollars).
+# These are taxed at preferential rates (0%/15%/20%) using pinned IRS thresholds and worksheet-style stacking.
+qualified_dividends_annual = 0.0
+long_term_capital_gains_annual = 0.0
+
+# Tier A itemized deductions (planning): if enabled, deduction = max(standard deduction, itemized_deductions_annual)
+itemized_deductions_enabled = false
+itemized_deductions_annual = 0.0
+
 [inputs.events]
 # Widow modeling: from widow_year onward, switches to Single filing status and uses survivor SS (max of two).
 widow_event_enabled = false

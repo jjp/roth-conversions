@@ -442,6 +442,8 @@ def build_report(
 
     resolved_tax_year_start = tax_tables.resolve_tax_year(start_year)
     resolved_tax_year_end = tax_tables.resolve_tax_year(end_year)
+    resolved_pref_year_start = tax_tables.resolve_preferential_tax_year(start_year)
+    resolved_pref_year_end = tax_tables.resolve_preferential_tax_year(end_year)
     resolved_premium_year_start = irmaa_tables.resolve_premium_year(start_year)
     resolved_premium_year_end = irmaa_tables.resolve_premium_year(end_year)
     resolved_part_b_year_start = medicare_part_b_tables.resolve_part_b_premium_year(start_year)
@@ -457,6 +459,10 @@ def build_report(
         (
             "Ordinary income tax table year (resolved)",
             f"start={resolved_tax_year_start}, end={resolved_tax_year_end}",
+        ),
+        (
+            "LTCG/QD threshold table year (resolved)",
+            f"start={resolved_pref_year_start}, end={resolved_pref_year_end}",
         ),
         (
             "IRMAA table year (resolved)",
@@ -481,6 +487,26 @@ def build_report(
                 "disabled"
                 if not bool(inputs.niit.enabled)
                 else f"enabled; realized NII ≈ taxable_return × {float(inputs.niit.nii_fraction_of_return):g} × {float(inputs.niit.realization_fraction):g}"
+            ),
+        ),
+        (
+            "Qualified dividends (modeled)",
+            _money(float(getattr(inputs.preferential_income, "qualified_dividends_annual", 0.0)))
+            if bool(getattr(inputs, "preferential_income", None)) and float(getattr(inputs.preferential_income, "qualified_dividends_annual", 0.0)) > 0
+            else "0",
+        ),
+        (
+            "Long-term capital gains (modeled)",
+            _money(float(getattr(inputs.preferential_income, "long_term_capital_gains_annual", 0.0)))
+            if bool(getattr(inputs, "preferential_income", None)) and float(getattr(inputs.preferential_income, "long_term_capital_gains_annual", 0.0)) > 0
+            else "0",
+        ),
+        (
+            "Itemized deductions (Tier A)",
+            (
+                "disabled"
+                if not bool(getattr(inputs, "itemized_deductions", None)) or not bool(inputs.itemized_deductions.enabled)
+                else _money(float(inputs.itemized_deductions.itemized_deductions_annual))
             ),
         ),
         (

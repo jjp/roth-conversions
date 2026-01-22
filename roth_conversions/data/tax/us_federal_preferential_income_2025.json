@@ -1,0 +1,30 @@
+{
+    "metadata": {
+        "source": {
+            "title": "Rev. Proc. 2024-40 (Inflation Adjustments for Tax Year 2025)",
+            "url": "https://www.irs.gov/pub/irs-drop/rp-24-40.pdf"
+        },
+        "notes": "Pinned long-term capital gains / qualified dividend (LTCG/QD) 0% and 15% taxable-income thresholds for tax year 2025, extracted from Rev. Proc. 2024-40 section 3.03. The 20% rate applies above the 15% threshold."
+    },
+    "tax_year": 2025,
+    "preferential_income": {
+        "ltcg_qd_thresholds": {
+            "MFJ": {
+                "max_zero_rate_amount": 96700,
+                "max_15_rate_amount": 600050
+            },
+            "Single": {
+                "max_zero_rate_amount": 48350,
+                "max_15_rate_amount": 533400
+            },
+            "MFS": {
+                "max_zero_rate_amount": 48350,
+                "max_15_rate_amount": 300000
+            },
+            "HOH": {
+                "max_zero_rate_amount": 64750,
+                "max_15_rate_amount": 566700
+            }
+        }
+    }
+}

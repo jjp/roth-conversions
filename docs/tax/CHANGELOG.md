@@ -21,6 +21,29 @@ This changelog tracks changes to pinned tax/benefit inputs and any related calcu
     - https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2026-including-amendments-from-the-one-big-beautiful-bill
     - https://www.irs.gov/pub/irs-drop/rp-25-32.pdf
 
+### Pinned preferential (LTCG / qualified dividends) thresholds
+
+- Pinned years available: 2024, 2025, 2026
+- Files:
+  - `roth_conversions/data/tax/us_federal_preferential_income_2024.json`
+  - `roth_conversions/data/tax/us_federal_preferential_income_2025.json`
+  - `roth_conversions/data/tax/us_federal_preferential_income_2026.json`
+- Sources (per file metadata):
+  - TY 2024: Rev. Proc. 2023-34 PDF (section 3.03)
+    - https://www.irs.gov/pub/irs-drop/rp-23-34.pdf
+  - TY 2025: Rev. Proc. 2024-40 PDF (section 3.03)
+    - https://www.irs.gov/pub/irs-drop/rp-24-40.pdf
+  - TY 2026: Rev. Proc. 2025-32 PDF (section 3.03)
+    - https://www.irs.gov/pub/irs-drop/rp-25-32.pdf
+
+### Itemized deductions (Tier A)
+
+- Added support for a user-supplied annual itemized deduction amount.
+- Applied as: `deduction = max(standard_deduction, itemized_deductions_annual)`.
+- Config keys:
+  - `inputs.taxes.itemized_deductions_enabled`
+  - `inputs.taxes.itemized_deductions_annual`
+
 ### Pinned IRMAA tables
 
 - Pinned years available: 2025, 2026

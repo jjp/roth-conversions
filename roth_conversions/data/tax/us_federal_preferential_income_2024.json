@@ -1,0 +1,30 @@
+{
+    "metadata": {
+        "source": {
+            "title": "Rev. Proc. 2023-34 (Inflation Adjustments for Tax Year 2024)",
+            "url": "https://www.irs.gov/pub/irs-drop/rp-23-34.pdf"
+        },
+        "notes": "Pinned long-term capital gains / qualified dividend (LTCG/QD) 0% and 15% taxable-income thresholds for tax year 2024, extracted from Rev. Proc. 2023-34 section 3.03. The 20% rate applies above the 15% threshold."
+    },
+    "tax_year": 2024,
+    "preferential_income": {
+        "ltcg_qd_thresholds": {
+            "MFJ": {
+                "max_zero_rate_amount": 94050,
+                "max_15_rate_amount": 583750
+            },
+            "Single": {
+                "max_zero_rate_amount": 47025,
+                "max_15_rate_amount": 518900
+            },
+            "MFS": {
+                "max_zero_rate_amount": 47025,
+                "max_15_rate_amount": 291850
+            },
+            "HOH": {
+                "max_zero_rate_amount": 63000,
+                "max_15_rate_amount": 551350
+            }
+        }
+    }
+}

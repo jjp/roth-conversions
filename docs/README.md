@@ -10,11 +10,13 @@ Start here:
 ## Core calculation notes
 
 - [Ordinary income tax + standard deduction (pinned tables)](tax/ordinary_income.md)
+- [Preferential rates (LTCG / qualified dividends) — pinned thresholds + stacking](tax/preferential_ltcg_qd.md)
 - [Social Security taxable benefits (provisional income)](tax/social_security_taxation.md)
 - [Medicare IRMAA (pinned tables, 2-year lookback)](tax/irmaa.md)
 - [Medicare Part B base premium (pinned)](tax/medicare_part_b_base_premium.md)
 - [NIIT (3.8%) — calculation + NII approximation](tax/niit.md)
 - [State income tax (flat effective rate — simplified)](tax/state_flat_tax.md)
+- [Itemized deductions (Tier A)](tax/itemized_deductions_tier_a.md)
 - [RMDs (Uniform Lifetime Table – simplified)](tax/rmd.md)
 - [QCD (modeled as RMD offset — simplified)](tax/qcd.md)
 - [Roth 5-year rule for conversions (simplified penalty/prevent model)](tax/roth_5_year_rule.md)

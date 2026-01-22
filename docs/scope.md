@@ -14,6 +14,8 @@ This is not a full tax-prep system and does not attempt to produce an IRS-file-r
 ## Major modeled components
 
 - Federal ordinary income tax using pinned brackets + standard deduction
+- Preferential tax rates for qualified dividends (QD) and long-term capital gains (LTCG) using pinned thresholds (0%/15%/20%) and worksheet-style stacking
+- Optional Tier A itemized deductions (user-supplied annual amount; deduction = max(standard, itemized))
 - Social Security taxation (provisional income)
 - RMDs (simplified)
 - Medicare Part B base premiums (pinned standard premium; simplified enrollment assumptions)
@@ -26,8 +28,8 @@ This is not a full tax-prep system and does not attempt to produce an IRS-file-r
 
 Ordered roughly by likely impact on IRA/Roth/RMD planning decisions (conversion “room”, marginal rates, MAGI-driven effects):
 
-- Preferential capital gains / qualified dividends tax rates
-- Itemized deductions, credits, AMT
+- Detailed itemized deductions (Schedule A component modeling), tax credits, and AMT
+- Special preferential-rate cases (collectibles at 28%, unrecaptured §1250 gain at 25%, and other Schedule D worksheet nuances)
 - State-specific retirement rules and detailed state tax law (only a simplified flat state tax is available)
 - Detailed investment tax mechanics (dividend yield, turnover, tax-loss harvesting)
 - Medicare enrollment timing, Part B late-enrollment penalties, and plan-specific Part D premium mechanics

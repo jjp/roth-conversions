@@ -36,6 +36,19 @@ def _available_tax_years() -> tuple[int, ...]:
     return tuple(sorted(set(years)))
 
 
+def _available_preferential_years() -> tuple[int, ...]:
+    if not data_dir.exists():
+        return ()
+    years: list[int] = []
+    for p in data_dir.glob("us_federal_preferential_income_*.json"):
+        try:
+            year_str = p.stem.split("_")[-1]
+            years.append(int(year_str))
+        except Exception:
+            continue
+    return tuple(sorted(set(years)))
+
+
 def resolve_tax_year(requested_year: int) -> int:
     """Resolve to the best available pinned tax year.
 
@@ -59,10 +72,53 @@ def resolve_tax_year(requested_year: int) -> int:
     )
 
 
+def resolve_preferential_tax_year(requested_year: int) -> int:
+    """Resolve to the best available pinned LTCG/QD threshold year.
+
+    Strategy: use the latest pinned year <= requested_year; if none, raise.
+
+    This is consistent with ordinary-income table resolution.
+    """
+
+    requested_year = int(requested_year)
+    years = _available_preferential_years()
+    if not years:
+        raise RuntimeError(f"No pinned preferential-income tax tables found in {data_dir}")
+
+    candidates = [y for y in years if y <= requested_year]
+    if candidates:
+        return max(candidates)
+
+    raise ValueError(
+        f"No pinned preferential-income tax tables for year <= {requested_year}. Available: {', '.join(map(str, years))}"
+    )
+
+
 def load_ordinary_income_table(*, tax_year: int) -> dict:
     year = resolve_tax_year(int(tax_year))
     path = data_dir / f"us_federal_ordinary_income_{year}.json"
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_preferential_income_table(*, tax_year: int) -> dict:
+    year = resolve_preferential_tax_year(int(tax_year))
+    path = data_dir / f"us_federal_preferential_income_{year}.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def get_ltcg_qd_thresholds(*, tax_year: int, filing_status: str) -> tuple[float, float]:
+    """Return (max_zero_rate_amount, max_15_rate_amount) for LTCG/QD.
+
+    These thresholds are expressed in terms of total taxable income.
+    """
+
+    table = load_preferential_income_table(tax_year=tax_year)
+    thresholds = table["preferential_income"]["ltcg_qd_thresholds"]
+    try:
+        row = thresholds[str(filing_status)]
+    except KeyError as e:
+        raise ValueError(f"Unsupported filing_status={filing_status!r} in pinned preferential tax table") from e
+    return float(row["max_zero_rate_amount"]), float(row["max_15_rate_amount"])
 
 
 def get_ordinary_income_brackets(*, tax_year: int, filing_status: str) -> tuple[TaxBracket, ...]:

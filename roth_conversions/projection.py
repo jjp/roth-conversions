@@ -5,7 +5,7 @@ from typing import Optional, Sequence
 from .models import HouseholdInputs, ProjectionResult, ProjectionYear, Strategy, as_float_seq, clamp_series
 from .rmd import required_minimum_distribution
 from .social_security import taxable_social_security
-from .tax import calculate_tax_ordinary_income, marginal_rate_ordinary_income
+from .tax import calculate_tax_federal_ltcg_qd_simple, marginal_rate_ordinary_income
 from .tax_tables import get_bracket_ceiling, get_standard_deduction
 from .irmaa_tables import get_irmaa_addons_monthly
 from .medicare_part_b_tables import get_part_b_base_premium_monthly
@@ -87,6 +87,12 @@ def project_with_tax_tracking(
         except Exception:
             # Backwards compatibility: old behavior assumed MFJ.
             standard_deduction = float(standard_deduction_mfj)
+
+        itemized_deduction = 0.0
+        if bool(getattr(inputs, "itemized_deductions", None)) and bool(inputs.itemized_deductions.enabled):
+            itemized_deduction = float(inputs.itemized_deductions.itemized_deductions_annual) * inflation_multiplier
+
+        deduction = max(float(standard_deduction), float(itemized_deduction))
 
         ira_r = float(ira_returns[yr]) if ira_returns is not None else float(inputs.assumptions.ira_return)
         roth_r = float(roth_returns[yr]) if roth_returns is not None else float(inputs.assumptions.roth_return)
@@ -183,7 +189,20 @@ def project_with_tax_tracking(
             other_income=taxable_ira_withdrawal,
             filing_status=filing_status,
         )
-        base_taxable_income = max(0.0, ss_taxable_no_conv + taxable_ira_withdrawal - float(standard_deduction))
+
+        qualified_dividends = 0.0
+        long_term_capital_gains = 0.0
+        if bool(getattr(inputs, "preferential_income", None)):
+            qualified_dividends = float(inputs.preferential_income.qualified_dividends_annual) * inflation_multiplier
+            long_term_capital_gains = float(inputs.preferential_income.long_term_capital_gains_annual) * inflation_multiplier
+
+        # Ordinary taxable income excludes preferential income.
+        base_taxable_income = max(
+            0.0,
+            (ss_taxable_no_conv + taxable_ira_withdrawal + qualified_dividends + long_term_capital_gains) - float(deduction),
+        )
+        base_pref_taxable = min(max(0.0, qualified_dividends + long_term_capital_gains), base_taxable_income)
+        base_ordinary_taxable_income = max(0.0, base_taxable_income - base_pref_taxable)
 
         # Conversions
         conversion = 0.0
@@ -203,7 +222,7 @@ def project_with_tax_tracking(
 
             room_in_brackets = max(
                 0.0,
-                (bracket_32_ceiling if strategy.allow_32_bracket else bracket_24_ceiling) - base_taxable_income,
+                (bracket_32_ceiling if strategy.allow_32_bracket else bracket_24_ceiling) - base_ordinary_taxable_income,
             )
 
             # Notebook used 0.28 here for max_affordable
@@ -220,12 +239,19 @@ def project_with_tax_tracking(
                 taxable_income_with_conv = max(0.0, ss_taxable_with_conv + taxable_ira_withdrawal + conversion - float(standard_deduction))
                 taxable_income_no_conv = max(0.0, ss_taxable_no_conv + taxable_ira_withdrawal - float(standard_deduction))
 
-                conversion_tax = calculate_tax_ordinary_income(
-                    taxable_income=taxable_income_with_conv,
+                # Full tax difference, including the effect of conversions pushing LTCG/QD into higher rate brackets.
+                conversion_tax = calculate_tax_federal_ltcg_qd_simple(
+                    ordinary_income=float(ss_taxable_with_conv) + float(taxable_ira_withdrawal) + float(conversion),
+                    qualified_dividends=float(qualified_dividends),
+                    long_term_capital_gains=float(long_term_capital_gains),
+                    deduction=float(deduction),
                     tax_year=calendar_year,
                     filing_status=filing_status,
-                ) - calculate_tax_ordinary_income(
-                    taxable_income=taxable_income_no_conv,
+                ) - calculate_tax_federal_ltcg_qd_simple(
+                    ordinary_income=float(ss_taxable_no_conv) + float(taxable_ira_withdrawal),
+                    qualified_dividends=float(qualified_dividends),
+                    long_term_capital_gains=float(long_term_capital_gains),
+                    deduction=float(deduction),
                     tax_year=calendar_year,
                     filing_status=filing_status,
                 )
@@ -243,11 +269,18 @@ def project_with_tax_tracking(
             other_income=taxable_ira_withdrawal + conversion,
             filing_status=filing_status,
         )
-        total_taxable_income = max(0.0, ss_taxable_final + taxable_ira_withdrawal + conversion - float(standard_deduction))
-        income_tax = calculate_tax_ordinary_income(
-            taxable_income=total_taxable_income,
+        income_tax = calculate_tax_federal_ltcg_qd_simple(
+            ordinary_income=float(ss_taxable_final) + float(taxable_ira_withdrawal) + float(conversion),
+            qualified_dividends=float(qualified_dividends),
+            long_term_capital_gains=float(long_term_capital_gains),
+            deduction=float(deduction),
             tax_year=calendar_year,
             filing_status=filing_status,
+        )
+
+        total_taxable_income = max(
+            0.0,
+            (ss_taxable_final + taxable_ira_withdrawal + conversion + qualified_dividends + long_term_capital_gains) - float(deduction),
         )
 
         state_tax = 0.0
@@ -255,7 +288,14 @@ def project_with_tax_tracking(
             base = str(getattr(inputs.state_tax, "base", "agi"))
             # Our best available internal approximation of AGI/MAGI is:
             # IRA withdrawals + conversions + taxable SS + (realized) investment income.
-            agi_approx = float(taxable_ira_withdrawal) + float(conversion) + float(ss_taxable_final) + float(investment_income)
+            agi_approx = (
+                float(taxable_ira_withdrawal)
+                + float(conversion)
+                + float(ss_taxable_final)
+                + float(qualified_dividends)
+                + float(long_term_capital_gains)
+                + float(investment_income)
+            )
             base_amount = agi_approx if base == "agi" else float(total_taxable_income)
             state_tax = float(inputs.state_tax.rate) * max(0.0, float(base_amount))
             cumulative_state_tax += state_tax
@@ -267,7 +307,14 @@ def project_with_tax_tracking(
         )
 
         # Persist MAGI estimate for lookback calculations.
-        magi_current_year = float(taxable_ira_withdrawal) + float(conversion) + float(ss_taxable_final) + float(investment_income)
+        magi_current_year = (
+            float(taxable_ira_withdrawal)
+            + float(conversion)
+            + float(ss_taxable_final)
+            + float(qualified_dividends)
+            + float(long_term_capital_gains)
+            + float(investment_income)
+        )
         magi_by_calendar_year[calendar_year] = magi_current_year
 
         niit_tax = 0.0
@@ -565,6 +612,12 @@ def project_path(
         except Exception:
             standard_deduction = float(standard_deduction_mfj)
 
+        itemized_deduction = 0.0
+        if bool(getattr(inputs, "itemized_deductions", None)) and bool(inputs.itemized_deductions.enabled):
+            itemized_deduction = float(inputs.itemized_deductions.itemized_deductions_annual) * inflation_multiplier
+
+        deduction = max(float(standard_deduction), float(itemized_deduction))
+
         ss1 = float(inputs.spouse1.ss_annual) if yr >= inputs.years_to_spouse1_ss else 0.0
         ss2 = float(inputs.spouse2.ss_annual) if yr >= inputs.years_to_spouse2_ss else 0.0
         total_ss = max(ss1, ss2) if widow_active else (ss1 + ss2)
@@ -636,14 +689,25 @@ def project_path(
             filing_status=filing_status,
         )
 
+        qualified_dividends = 0.0
+        long_term_capital_gains = 0.0
+        if bool(getattr(inputs, "preferential_income", None)):
+            qualified_dividends = float(inputs.preferential_income.qualified_dividends_annual) * inflation_multiplier
+            long_term_capital_gains = float(inputs.preferential_income.long_term_capital_gains_annual) * inflation_multiplier
+
         conversion = 0.0
         conversion_tax = 0.0
         if yr < int(conversion_years) and float(annual_conversion) > 0:
             available_for_conv_tax = max(0.0, taxable - float(inputs.plan.minimum_cash_reserve) - from_taxable)
 
-            base_taxable_income = max(0.0, ss_taxable_no_conv + taxable_ira_withdrawal - float(standard_deduction))
+            base_taxable_income = max(
+                0.0,
+                (ss_taxable_no_conv + taxable_ira_withdrawal + qualified_dividends + long_term_capital_gains) - float(deduction),
+            )
+            base_pref_taxable = min(max(0.0, qualified_dividends + long_term_capital_gains), base_taxable_income)
+            base_ordinary_taxable_income = max(0.0, base_taxable_income - base_pref_taxable)
             mr = marginal_rate_ordinary_income(
-                taxable_income=base_taxable_income,
+                taxable_income=base_ordinary_taxable_income,
                 tax_year=calendar_year,
                 filing_status=filing_status,
             )
@@ -653,7 +717,7 @@ def project_path(
             except Exception:
                 ceiling_24 = 383_900.0
 
-            room_in_24 = max(0.0, float(ceiling_24) - base_taxable_income)
+            room_in_24 = max(0.0, float(ceiling_24) - base_ordinary_taxable_income)
             max_affordable = available_for_conv_tax / mr if mr > 0 else 0.0
 
             conversion = min(float(annual_conversion), room_in_24, max_affordable, max(0.0, ira - total_ira_outflow))
@@ -666,15 +730,18 @@ def project_path(
                     filing_status=filing_status,
                 )
 
-                taxable_income_with_conv = max(0.0, ss_taxable_with_conv + taxable_ira_withdrawal + conversion - float(standard_deduction))
-                taxable_income_no_conv = max(0.0, ss_taxable_no_conv + taxable_ira_withdrawal - float(standard_deduction))
-
-                conversion_tax = calculate_tax_ordinary_income(
-                    taxable_income=taxable_income_with_conv,
+                conversion_tax = calculate_tax_federal_ltcg_qd_simple(
+                    ordinary_income=float(ss_taxable_with_conv) + float(taxable_ira_withdrawal) + float(conversion),
+                    qualified_dividends=float(qualified_dividends),
+                    long_term_capital_gains=float(long_term_capital_gains),
+                    deduction=float(deduction),
                     tax_year=calendar_year,
                     filing_status=filing_status,
-                ) - calculate_tax_ordinary_income(
-                    taxable_income=taxable_income_no_conv,
+                ) - calculate_tax_federal_ltcg_qd_simple(
+                    ordinary_income=float(ss_taxable_no_conv) + float(taxable_ira_withdrawal),
+                    qualified_dividends=float(qualified_dividends),
+                    long_term_capital_gains=float(long_term_capital_gains),
+                    deduction=float(deduction),
                     tax_year=calendar_year,
                     filing_status=filing_status,
                 )
@@ -689,9 +756,15 @@ def project_path(
             other_income=taxable_ira_withdrawal + conversion,
             filing_status=filing_status,
         )
-        total_taxable_income = max(0.0, ss_taxable_final + taxable_ira_withdrawal + conversion - float(standard_deduction))
-        income_tax = calculate_tax_ordinary_income(
-            taxable_income=total_taxable_income,
+        total_taxable_income = max(
+            0.0,
+            (ss_taxable_final + taxable_ira_withdrawal + conversion + qualified_dividends + long_term_capital_gains) - float(deduction),
+        )
+        income_tax = calculate_tax_federal_ltcg_qd_simple(
+            ordinary_income=float(ss_taxable_final) + float(taxable_ira_withdrawal) + float(conversion),
+            qualified_dividends=float(qualified_dividends),
+            long_term_capital_gains=float(long_term_capital_gains),
+            deduction=float(deduction),
             tax_year=calendar_year,
             filing_status=filing_status,
         )
@@ -699,7 +772,14 @@ def project_path(
         state_tax = 0.0
         if bool(getattr(inputs, "state_tax", None)) and bool(inputs.state_tax.enabled) and float(inputs.state_tax.rate) > 0:
             base = str(getattr(inputs.state_tax, "base", "agi"))
-            agi_approx = float(taxable_ira_withdrawal) + float(conversion) + float(ss_taxable_final) + float(investment_income)
+            agi_approx = (
+                float(taxable_ira_withdrawal)
+                + float(conversion)
+                + float(ss_taxable_final)
+                + float(qualified_dividends)
+                + float(long_term_capital_gains)
+                + float(investment_income)
+            )
             base_amount = agi_approx if base == "agi" else float(total_taxable_income)
             state_tax = float(inputs.state_tax.rate) * max(0.0, float(base_amount))
             total_state_tax += state_tax
@@ -713,7 +793,14 @@ def project_path(
         # IRMAA (Medicare premium surcharges): 2-year lookback MAGI.
         irmaa_cost = 0.0
         medicare_part_b_base_cost = 0.0
-        magi_current_year = float(taxable_ira_withdrawal) + float(conversion) + float(ss_taxable_final) + float(investment_income)
+        magi_current_year = (
+            float(taxable_ira_withdrawal)
+            + float(conversion)
+            + float(ss_taxable_final)
+            + float(qualified_dividends)
+            + float(long_term_capital_gains)
+            + float(investment_income)
+        )
         magi_by_calendar_year[calendar_year] = magi_current_year
 
         covered_people_cfg = getattr(inputs.medicare, "covered_people", None)

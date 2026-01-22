@@ -54,6 +54,32 @@ class NIITInputs:
 
 
 @dataclass(frozen=True)
+class PreferentialIncomeInputs:
+    """Simplified qualified dividends + long-term capital gains inputs.
+
+    These are household-dependent and are modeled as exogenous annual amounts (start-year dollars).
+    When used in a projection year, they are inflated by the model's inflation multiplier.
+    """
+
+    qualified_dividends_annual: float = 0.0
+    long_term_capital_gains_annual: float = 0.0
+
+
+@dataclass(frozen=True)
+class ItemizedDeductionsInputs:
+    """Tier A itemized deductions.
+
+    The model uses:
+        deduction = max(standard_deduction, itemized_deductions_annual)
+
+    `itemized_deductions_annual` is expressed in start-year dollars and inflated in projections.
+    """
+
+    enabled: bool = False
+    itemized_deductions_annual: float = 0.0
+
+
+@dataclass(frozen=True)
 class RothRulesInputs:
     """Roth IRA rule approximations.
 
@@ -193,6 +219,8 @@ class HouseholdInputs:
     widow_event: WidowEventInputs = WidowEventInputs()
     reporting: ReportingInputs = ReportingInputs()
     niit: NIITInputs = NIITInputs()
+    preferential_income: PreferentialIncomeInputs = PreferentialIncomeInputs()
+    itemized_deductions: ItemizedDeductionsInputs = ItemizedDeductionsInputs()
     roth_rules: RothRulesInputs = RothRulesInputs()
     asset_location: AssetLocationInputs = AssetLocationInputs()
     charity: CharitableGivingInputs = CharitableGivingInputs()

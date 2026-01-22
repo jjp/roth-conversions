@@ -19,7 +19,9 @@ from .models import (
     JointAccounts,
     MedicareInputs,
     NIITInputs,
+    ItemizedDeductionsInputs,
     PlanInputs,
+    PreferentialIncomeInputs,
     ReportingInputs,
     RothRulesInputs,
     ReturnAssumptions,
@@ -128,6 +130,22 @@ def parse_inputs(cfg: dict[str, Any]) -> HouseholdInputs:
         raise ValueError("inputs.taxes.state_tax_rate must be between 0 and 1")
     if state_tax_inputs.base not in {"agi", "taxable_income"}:
         raise ValueError("inputs.taxes.state_tax_base must be 'agi' or 'taxable_income'")
+
+    preferential_income_inputs = PreferentialIncomeInputs(
+        qualified_dividends_annual=float(taxes.get("qualified_dividends_annual", 0.0)),
+        long_term_capital_gains_annual=float(taxes.get("long_term_capital_gains_annual", 0.0)),
+    )
+    if preferential_income_inputs.qualified_dividends_annual < 0:
+        raise ValueError("inputs.taxes.qualified_dividends_annual must be >= 0")
+    if preferential_income_inputs.long_term_capital_gains_annual < 0:
+        raise ValueError("inputs.taxes.long_term_capital_gains_annual must be >= 0")
+
+    itemized_deductions_inputs = ItemizedDeductionsInputs(
+        enabled=bool(taxes.get("itemized_deductions_enabled", False)),
+        itemized_deductions_annual=float(taxes.get("itemized_deductions_annual", 0.0)),
+    )
+    if itemized_deductions_inputs.itemized_deductions_annual < 0:
+        raise ValueError("inputs.taxes.itemized_deductions_annual must be >= 0")
 
     roth_rules = inputs.get("roth_rules", {})
     roth_rules_inputs = RothRulesInputs(
@@ -245,6 +263,8 @@ def parse_inputs(cfg: dict[str, Any]) -> HouseholdInputs:
         widow_event=widow_event,
         reporting=reporting_inputs,
         niit=niit_inputs,
+        preferential_income=preferential_income_inputs,
+        itemized_deductions=itemized_deductions_inputs,
         roth_rules=roth_rules_inputs,
         asset_location=asset_location_inputs,
         charity=charity_inputs,

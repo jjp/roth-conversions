@@ -1,0 +1,30 @@
+{
+    "metadata": {
+        "source": {
+            "title": "Rev. Proc. 2025-32 (Inflation Adjustments for Tax Year 2026)",
+            "url": "https://www.irs.gov/pub/irs-drop/rp-25-32.pdf"
+        },
+        "notes": "Pinned long-term capital gains / qualified dividend (LTCG/QD) 0% and 15% taxable-income thresholds for tax year 2026, extracted from Rev. Proc. 2025-32 section 3.03. The 20% rate applies above the 15% threshold."
+    },
+    "tax_year": 2026,
+    "preferential_income": {
+        "ltcg_qd_thresholds": {
+            "MFJ": {
+                "max_zero_rate_amount": 98900,
+                "max_15_rate_amount": 613700
+            },
+            "Single": {
+                "max_zero_rate_amount": 49450,
+                "max_15_rate_amount": 545500
+            },
+            "MFS": {
+                "max_zero_rate_amount": 49450,
+                "max_15_rate_amount": 306850
+            },
+            "HOH": {
+                "max_zero_rate_amount": 66200,
+                "max_15_rate_amount": 579600
+            }
+        }
+    }
+}

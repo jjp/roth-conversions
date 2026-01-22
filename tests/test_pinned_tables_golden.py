@@ -12,6 +12,17 @@ class TestPinnedTaxTablesGolden(unittest.TestCase):
         with self.assertRaises(ValueError):
             tax_tables.resolve_tax_year(2023)
 
+    def test_preferential_tax_year_resolution_caps_to_latest_pinned(self):
+        self.assertEqual(tax_tables.resolve_preferential_tax_year(2099), 2026)
+
+    def test_preferential_tax_year_resolution_raises_before_first_pinned(self):
+        with self.assertRaises(ValueError):
+            tax_tables.resolve_preferential_tax_year(2023)
+
+    def test_2024_ltcg_qd_thresholds(self):
+        self.assertEqual(tax_tables.get_ltcg_qd_thresholds(tax_year=2024, filing_status="MFJ"), (94_050.0, 583_750.0))
+        self.assertEqual(tax_tables.get_ltcg_qd_thresholds(tax_year=2024, filing_status="Single"), (47_025.0, 518_900.0))
+
     def test_2026_standard_deduction(self):
         self.assertEqual(tax_tables.get_standard_deduction(tax_year=2026, filing_status="MFJ"), 32_200.0)
         self.assertEqual(tax_tables.get_standard_deduction(tax_year=2026, filing_status="Single"), 16_100.0)
