@@ -1014,6 +1014,10 @@ def project_path(
                 "year": yr + 1,
                 "calendar_year": calendar_year,
                 "inflation_multiplier": inflation_multiplier,
+                # Generic (stable) keys for downstream exports / agent use
+                "spouse1_age": spouse1_age,
+                "spouse2_age": spouse2_age,
+                # Legacy notebook-derived keys (kept for backwards compatibility)
                 "rajesh_age": spouse1_age,
                 "terri_age": spouse2_age,
                 "ss_income": total_ss,

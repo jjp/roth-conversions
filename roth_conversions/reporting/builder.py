@@ -46,6 +46,7 @@ def list_default_report_sections() -> tuple[tuple[str, str], ...]:
         "Longevity Sensitivity",
         "32% Question (Breakeven)",
         "Home Purchase Scenario",
+        "Household Inputs",
         "Tax Inputs & Assumptions",
     )
     return tuple((_section_key(t), t) for t in titles)
@@ -431,6 +432,47 @@ def build_report(
                     ),
                 ),
             ),
+        )
+    )
+
+    # --- Tax inputs appendix ---
+    # --- Household inputs appendix ---
+    rows_household: list[tuple[str, str]] = [
+        ("Household / Filing status", str(inputs.household.tax_filing_status)),
+        ("Start year", str(int(inputs.household.start_year))),
+        ("Discount rate", f"{float(inputs.household.discount_rate):.2%}"),
+        ("Spouse 1 name", str(inputs.spouse1.name)),
+        ("Spouse 1 age (start)", str(int(inputs.spouse1.age))),
+        ("Spouse 1 SS start age", str(int(inputs.spouse1.ss_start_age))),
+        ("Spouse 1 SS annual", _money(float(inputs.spouse1.ss_annual))),
+        ("Spouse 1 traditional IRA", _money(float(inputs.spouse1.traditional_ira))),
+        ("Spouse 1 SEP IRA", _money(float(inputs.spouse1.sep_ira))),
+        ("Spouse 1 Roth IRA", _money(float(inputs.spouse1.roth_ira))),
+        ("Spouse 2 name", str(inputs.spouse2.name)),
+        ("Spouse 2 age (start)", str(int(inputs.spouse2.age))),
+        ("Spouse 2 SS start age", str(int(inputs.spouse2.ss_start_age))),
+        ("Spouse 2 SS annual", _money(float(inputs.spouse2.ss_annual))),
+        ("Spouse 2 traditional IRA", _money(float(inputs.spouse2.traditional_ira))),
+        ("Spouse 2 SEP IRA", _money(float(inputs.spouse2.sep_ira))),
+        ("Spouse 2 Roth IRA", _money(float(inputs.spouse2.roth_ira))),
+        ("Joint taxable accounts", _money(float(inputs.joint.taxable_accounts))),
+        ("IRA after-tax basis (joint)", _money(float(getattr(inputs.joint, "ira_after_tax_basis", 0.0)))),
+        ("Monthly income need", _money(float(inputs.plan.monthly_income_need))),
+        ("Minimum cash reserve", _money(float(inputs.plan.minimum_cash_reserve))),
+        ("Inflation rate", f"{float(inputs.assumptions.inflation_rate):.2%}"),
+        ("Taxable return", f"{float(inputs.assumptions.taxable_return):.2%}"),
+        ("IRA return", f"{float(inputs.assumptions.ira_return):.2%}"),
+        ("Roth return", f"{float(inputs.assumptions.roth_return):.2%}"),
+    ]
+
+    sections.append(
+        ReportSection(
+            title="Household Inputs",
+            paragraphs=(
+                "Appendix: core household inputs and financial starting point.",
+                "These values come directly from the config (no inference).",
+            ),
+            tables=(ReportTable(headers=["Item", "Value"], rows=tuple(rows_household)),),
         )
     )
 

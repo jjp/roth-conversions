@@ -27,6 +27,37 @@
 - `retirement_config.scenario_large_charity_qcd.toml`
   - Large charitable giving with QCD enabled.
 
+## Frank scenarios (comment-driven)
+
+These configs were added to match the items in `comments/` (see `docs/frank_scenario_crosswalk.md`).
+
+- `retirement_config.scenario_qcd_70_5_cap_111k.toml`
+  - QCD edge-case coverage with `qcd_eligible_age=70.5` and $111k cap.
+
+- `retirement_config.scenario_ira_basis_pro_rata.toml`
+  - After-tax IRA basis + pro-rata taxation.
+
+- `retirement_config.scenario_state_tax_enabled.toml`
+  - Simplified state-tax effective-rate toggle.
+
+- `retirement_config.scenario_niit_trigger.toml`
+  - NIIT stress case (large taxable investment income).
+
+- `retirement_config.scenario_roth_5yr_penalty_home_purchase.toml`
+  - Roth 5-year rule penalty exercise (via the home purchase sub-scenario in reports).
+
+- `retirement_config.scenario_asset_location_enabled.toml`
+  - Asset location sensitivity.
+
+- `retirement_config.scenario_objective_legacy.toml`
+  - Legacy objective.
+
+- `retirement_config.scenario_objective_npv_taxes.toml`
+  - NPV-of-taxes objective + discounting + longevity sensitivity.
+
+- `retirement_config.scenario_ss_taxation_stress.toml`
+  - Social Security taxation sensitivity stress case.
+
 ## Scenario configs where Roth conversions often _don’t_ make sense
 
 - `retirement_config.scenario_no_convert_small_ira_high_roth.toml`

@@ -1,0 +1,97 @@
+# Frank scenario
+# Exercises the pro-rata rule when the IRA contains after-tax basis (Form 8606 concept).
+# Designed so conversions and/or IRA withdrawals consume basis pro-rata.
+
+[inputs.household]
+tax_filing_status = "MFJ"
+start_year = 2026
+discount_rate = 0.0
+
+[inputs.reporting]
+value_basis = "nominal"
+objective = "after_tax"
+longevity_sensitivity_enabled = false
+
+[inputs.spouse1]
+name = "Taxpayer"
+age = 60
+traditional_ira = 175_000
+sep_ira = 0
+roth_ira = 0
+ss_start_age = 70
+ss_annual = 0
+
+[inputs.spouse2]
+name = "Spouse"
+age = 60
+traditional_ira = 0
+sep_ira = 0
+roth_ira = 0
+ss_start_age = 70
+ss_annual = 0
+
+[inputs.joint]
+# Keep taxable liquidity low so IRA activity is visible and pro-rata matters.
+taxable_accounts = 60_000
+# Matches Frank's example basis magnitude: $100K basis on a $175K IRA.
+ira_after_tax_basis = 100_000
+
+[inputs.plan]
+monthly_income_need = 7_000
+minimum_cash_reserve = 20_000
+
+[inputs.assumptions]
+inflation_rate = 0.025
+taxable_return = 0.05
+ira_return = 0.05
+roth_return = 0.05
+
+[inputs.medicare]
+irmaa_enabled = false
+part_b_base_premium_enabled = false
+
+[inputs.taxes]
+niit_enabled = false
+niit_nii_fraction_of_return = 0.70
+niit_realization_fraction = 0.60
+
+state_tax_enabled = false
+state_tax_rate = 0.0
+state_tax_base = "agi"
+
+qualified_dividends_annual = 0.0
+long_term_capital_gains_annual = 0.0
+
+itemized_deductions_enabled = false
+itemized_deductions_annual = 0.0
+
+[inputs.events]
+widow_event_enabled = false
+
+[inputs.withdrawal_policy]
+# Use taxable first; if insufficient, IRA will fund.
+income_tax_payment_source = "taxable"
+conversion_tax_payment_source = "taxable"
+
+[inputs.charity]
+enabled = false
+annual_amount = 0.0
+use_qcd = true
+qcd_eligible_age = 70.5
+qcd_annual_cap_per_person = 111000.0
+
+[inputs.heirs]
+enabled = false
+distribution_years = 10
+heir_tax_rate = 0.30
+
+[inputs.roth_rules]
+enabled = false
+conversion_wait_years = 5
+qualified_age_years = 60
+penalty_rate = 0.10
+policy = "penalty"
+
+[inputs.asset_location]
+enabled = false
+roth_return_deltas = [0.00, 0.01, 0.02]

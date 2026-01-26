@@ -1,0 +1,101 @@
+# Frank scenario
+# Exercises the Roth conversion 5-year rule (penalty mode) by combining:
+# - Young household (< qualified_age_years)
+# - Conversions
+# - A near-term home purchase that may require withdrawing conversion principal within 5 years
+#
+# Note: The home purchase parameters are controlled by the report/packet runner defaults
+# (purchase_year=2027, down_payment=200k unless overridden).
+
+[inputs.household]
+tax_filing_status = "MFJ"
+start_year = 2026
+discount_rate = 0.0
+
+[inputs.reporting]
+value_basis = "nominal"
+objective = "after_tax"
+longevity_sensitivity_enabled = false
+
+[inputs.spouse1]
+name = "Spouse 1"
+age = 55
+traditional_ira = 900_000
+sep_ira = 0
+roth_ira = 20_000
+ss_start_age = 70
+ss_annual = 0
+
+[inputs.spouse2]
+name = "Spouse 2"
+age = 54
+traditional_ira = 700_000
+sep_ira = 0
+roth_ira = 20_000
+ss_start_age = 70
+ss_annual = 0
+
+[inputs.joint]
+# Enough taxable to pay conversion taxes but not enough to trivially fund the whole down payment.
+taxable_accounts = 250_000
+ira_after_tax_basis = 0.0
+
+[inputs.plan]
+monthly_income_need = 11_000
+minimum_cash_reserve = 50_000
+
+[inputs.assumptions]
+inflation_rate = 0.025
+taxable_return = 0.06
+ira_return = 0.06
+roth_return = 0.07
+
+[inputs.medicare]
+irmaa_enabled = false
+part_b_base_premium_enabled = false
+
+[inputs.taxes]
+niit_enabled = false
+niit_nii_fraction_of_return = 0.70
+niit_realization_fraction = 0.60
+
+state_tax_enabled = false
+state_tax_rate = 0.0
+state_tax_base = "agi"
+
+qualified_dividends_annual = 0.0
+long_term_capital_gains_annual = 0.0
+
+itemized_deductions_enabled = false
+itemized_deductions_annual = 0.0
+
+[inputs.events]
+widow_event_enabled = false
+
+[inputs.withdrawal_policy]
+income_tax_payment_source = "taxable"
+conversion_tax_payment_source = "taxable"
+
+[inputs.charity]
+enabled = false
+annual_amount = 0.0
+use_qcd = true
+qcd_eligible_age = 70.5
+qcd_annual_cap_per_person = 111000.0
+
+[inputs.heirs]
+enabled = false
+distribution_years = 10
+heir_tax_rate = 0.30
+
+[inputs.roth_rules]
+# Enable Roth 5-year rule tracking/penalty
+enabled = true
+conversion_wait_years = 5
+qualified_age_years = 60
+penalty_rate = 0.10
+policy = "penalty"
+
+[inputs.asset_location]
+enabled = false
+roth_return_deltas = [0.00, 0.01, 0.02]
