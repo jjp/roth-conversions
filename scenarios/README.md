@@ -5,7 +5,7 @@ This repo already has runnable scenario configs under `configs/` (see `configs/R
 For accountant validation, the goal is to produce a repeatable **packet per scenario** that includes:
 
 - The exact input config used (TOML)
-- A human-readable report (Markdown)
+- A human-readable report (PDF; Markdown optional)
 - Year-by-year CSV exports for each Path (A/B/C) so line-items (MAGI, taxes, RMDs, IRMAA, etc.) can be reviewed
 - A small machine-readable `summary.json` for quick scanning / diffs
 
@@ -13,6 +13,12 @@ For accountant validation, the goal is to produce a repeatable **packet per scen
 
 ```pwsh
 uv run python scripts/run_scenario_packets.py
+```
+
+To run only scenario configs:
+
+```pwsh
+uv run python scripts/run_scenario_packets.py --pattern "retirement_config.scenario_*.toml"
 ```
 
 If PDF rendering fails, install the optional dependency:
@@ -28,7 +34,7 @@ Outputs land in:
   - `config.toml` (copied input)
   - `inputs_parsed.json` (normalized parsed input)
   - `report.pdf` (primary for accountant review)
-  - `report.md` (optional, useful for diffing)
+  - `report.md` (optional; generate via `--report-format md` or `--report-format both`)
   - `yearly_path_a.csv`, `yearly_path_b.csv`, `yearly_path_c.csv`
   - `summary.json`
 - `outputs/scenario_packets_<timestamp>/index.csv` (rollup)
@@ -45,7 +51,7 @@ Suggested review flow per scenario:
    - filing status, start year, discount rate
    - return assumptions + inflation
    - NIIT/state tax/IRMAA/QCD/heirs/widow switches
-2. Open `report.md` for the high-level conclusions and the pinned tax-table appendix
+2. Open `report.pdf` for the high-level conclusions and the pinned tax-table appendix
 3. Use the yearly CSVs to validate year-by-year calculations
    - total SS + RMD + conversion → MAGI
    - conversion tax + income tax (+ state/NIIT/IRMAA if enabled)
