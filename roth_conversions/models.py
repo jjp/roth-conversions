@@ -108,6 +108,9 @@ class AssetLocationInputs:
 @dataclass(frozen=True)
 class JointAccounts:
     taxable_accounts: float
+    # Aggregate after-tax (non-deductible) basis across all non-Roth IRAs (Form 8606 concept).
+    # If non-zero, IRA distributions and Roth conversions are modeled pro-rata.
+    ira_after_tax_basis: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -177,17 +180,19 @@ class WidowEventInputs:
 class CharitableGivingInputs:
     """Charitable giving and QCD (Qualified Charitable Distribution) assumptions.
 
-    Notes:
-    - This model uses whole-year ages. The real-world QCD eligibility is age 70½; we approximate
-      with a configurable whole-year threshold (default 71).
+        Notes:
+        - The real-world QCD eligibility is age 70½. This tool models ages in whole years for
+            projection simplicity; you can set `qcd_eligible_age` to 70.5 (default) to document
+            the rule, but whole-year ages effectively behave like an age-71 threshold unless you
+            model ages more precisely.
     - QCD reduces taxable income / MAGI (excluded from AGI) while still reducing IRA balance.
     """
 
     enabled: bool = False
     annual_amount: float = 0.0  # start-year dollars
     use_qcd: bool = True
-    qcd_eligible_age: int = 71
-    qcd_annual_cap_per_person: float = 100_000.0
+    qcd_eligible_age: float = 70.5
+    qcd_annual_cap_per_person: float = 111_000.0
 
 
 @dataclass(frozen=True)

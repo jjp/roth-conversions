@@ -199,12 +199,12 @@ def parse_inputs(cfg: dict[str, Any]) -> HouseholdInputs:
         enabled=bool(charity.get("enabled", False)),
         annual_amount=float(charity.get("annual_amount", 0.0)),
         use_qcd=bool(charity.get("use_qcd", True)),
-        qcd_eligible_age=int(charity.get("qcd_eligible_age", 71)),
-        qcd_annual_cap_per_person=float(charity.get("qcd_annual_cap_per_person", 100_000.0)),
+        qcd_eligible_age=float(charity.get("qcd_eligible_age", 70.5)),
+        qcd_annual_cap_per_person=float(charity.get("qcd_annual_cap_per_person", 111_000.0)),
     )
     if charity_inputs.annual_amount < 0:
         raise ValueError("inputs.charity.annual_amount must be >= 0")
-    if charity_inputs.qcd_eligible_age < 0:
+    if float(charity_inputs.qcd_eligible_age) < 0:
         raise ValueError("inputs.charity.qcd_eligible_age must be >= 0")
     if charity_inputs.qcd_annual_cap_per_person < 0:
         raise ValueError("inputs.charity.qcd_annual_cap_per_person must be >= 0")
@@ -246,6 +246,7 @@ def parse_inputs(cfg: dict[str, Any]) -> HouseholdInputs:
         ),
         joint=JointAccounts(
             taxable_accounts=float(joint.get("taxable_accounts", 0.0)),
+            ira_after_tax_basis=float(joint.get("ira_after_tax_basis", 0.0)),
         ),
         plan=PlanInputs(
             monthly_income_need=float(plan["monthly_income_need"]),

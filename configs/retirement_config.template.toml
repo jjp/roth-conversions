@@ -41,6 +41,7 @@ ss_annual = 28000
 
 [inputs.joint]
 taxable_accounts = 450000
+ira_after_tax_basis = 0.0
 
 [inputs.plan]
 monthly_income_need = 10000
@@ -108,12 +109,12 @@ conversion_tax_payment_source = "taxable"
 [inputs.charity]
 # Planned annual charitable giving (start-year dollars).
 # If enabled + use_qcd=true, the model will attempt to satisfy giving using a QCD from the IRA
-# once either spouse reaches qcd_eligible_age (approximation of the 70½ rule).
+# once either spouse reaches qcd_eligible_age (70½ rule).
 enabled = false
 annual_amount = 0.0
 use_qcd = true
-qcd_eligible_age = 71
-qcd_annual_cap_per_person = 100000.0
+qcd_eligible_age = 70.5
+qcd_annual_cap_per_person = 111000.0
 
 [inputs.heirs]
 # Simplified heirs modeling: inherited IRA/Roth must be distributed within distribution_years.

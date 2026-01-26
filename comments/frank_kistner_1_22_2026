@@ -1,0 +1,42 @@
+As I mentioned yesterday, the donor must be age 70-1/2 or older at the time of the QCD. How your tool confirms it is up to you. It could compute age after entering the DoB, it could ask if the taxpayer is older than age 70-1/2, etc.
+
+There is currently a $111K annual dollar limit on QCDs.
+
+QCDs should be taken before other IRA withdrawals (which is why I do mine first thing in the new year) to avoid possibly making the QCD part of the taxable distribution for the year. See: https://irahelp.com/qcd-timing/
+[BTW – Ed Slott is a nationally recognized expert on IRAs]
+
+An important thing to note is that the 1099-R from your custodian does not specifically identify the amount of your QCD. If you simply enter every field on the 1099-R into your tax software, it will not make an adjustment to your income equal to the amount of the QCD. It is incumbent upon the taxpayer to correctly complete the 1099-R worksheet in their tax software so that the “QCD” appears as an adjustment to income on Form 1040.  Most tax software includes a worksheet that allows the user to indicate if some or all of the IRA distribution is a QCD.
+
+
+I looked at the state tax file in the tax folder, and it is pretty simple. I have attached an Excel worksheet of state taxes and notes by state. 
+
+Note that 7 states do not have a state income tax.
+
+Note that WA only taxes capital gains.
+
+I am thinking that for the first iteration of your product, you probably do not want to start with the details of the individuals tax return. Instead, just ask the person using the tool to enter the person’s applicable federal and state tax rates at the time of conversion and the person’s applicable federal and state tax rates at the time they start taking IRA withdrawals.
+
+If they are going to make Roth conversions over a number of years, you may have to allow for multiple rates in effect at the time of conversion.
+
+If they are going to start withdrawing, then move to a state with a different tax rate, you may also have to allow for different tax rates when they start withdrawing. The rates at withdrawal could be different because taxable income has changed, or in the case of state taxes, it could be because they moved to a different state (e.g. a no-tax state).
+
+I can see how this can quickly become quite convoluted.
+
+I may have mentioned this before, but if the taxpayer has both “pre-tax” and “after-tax” money in one or more IRAs, Roth conversions must be made “pro-rata.”
+
+Example:  Taxpayer’s IRA balance at the time of conversion is $175K as follows:
+Taxpayer has $50K in pre-tax (deductible) IRA contributions.
+Taxpayer has $100K in after-tax (non-deductible) IRA contributions (also referred to as “basis in the IRA”).
+Earnings of $25K.
+
+Taxpayer wants to convert $40K to Roth.
+
+Following the pro-rata rule:
+The taxable part of the conversion will be [($50K+$25K)/$175K]*$40K = $17.14K
+The non-taxable part of the conversion will be ($100K/$175K)*$40K = $22.86K
+The taxpayer’s basis in the IRA after conversion is ($100K – 22.86K) = $77.14K
+
+The English language explanation of the above:
+Step 1 computes the taxable part based on the amount of the IRA that has never been taxed divided by the IRA value, then multiplied by the amount to be converted.
+Step 2 computes the non-taxable part based on the amount of the IRA that has already been taxed (that is, after-tax contributions) divided by the IRA value, then multiplied by the amount to be converted.
+Step 3 computes the remaining basis in the IRA by subtracting the amount calculated in step 2 from the original $100K of after-tax contributions.

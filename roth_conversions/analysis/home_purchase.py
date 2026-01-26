@@ -12,6 +12,7 @@ from ..tax import calculate_tax_federal_ltcg_qd_simple, marginal_rate_ordinary_i
 from ..tax_tables import get_bracket_ceiling, get_standard_deduction
 from ..withdrawal_policy import pay_tax
 from ..niit import calculate_niit
+from ..ira_basis import allocate_ira_basis_pro_rata
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,7 @@ def project_with_home_purchase(
     ira = float(inputs.total_pretax)
     roth = float(inputs.total_roth)
     taxable = float(inputs.joint.taxable_accounts)
+    ira_basis = float(getattr(inputs.joint, "ira_after_tax_basis", 0.0))
 
     roth_ledger = RothLedger(basis_remaining=float(roth), buckets=[])
 
@@ -130,7 +132,8 @@ def project_with_home_purchase(
         if bool(charity.enabled) and float(charity.annual_amount) > 0:
             charity_need = float(charity.annual_amount) * inflation_multiplier
             if bool(charity.use_qcd):
-                eligible = (spouse1_age >= int(charity.qcd_eligible_age)) or (spouse2_age >= int(charity.qcd_eligible_age))
+                eligible_age = float(charity.qcd_eligible_age)
+                eligible = (float(spouse1_age) >= eligible_age) or (float(spouse2_age) >= eligible_age)
                 if eligible:
                     covered_people = 2 if filing_status == "MFJ" else 1
                     cap = float(charity.qcd_annual_cap_per_person) * float(covered_people)
@@ -148,6 +151,15 @@ def project_with_home_purchase(
 
         qcd_from_rmd = min(float(qcd), total_rmd_this_year) if total_rmd_this_year > 0 else 0.0
         qcd_extra = max(0.0, float(qcd) - qcd_from_rmd)
+
+        ira_after_qcd = ira
+        if ira_basis > 0.0 and float(qcd) > 0.0 and ira > 0.0:
+            _, _, ira_basis = allocate_ira_basis_pro_rata(
+                ira_balance=ira,
+                basis_remaining=ira_basis,
+                amount=float(qcd),
+            )
+            ira_after_qcd = max(0.0, ira - float(qcd))
 
         # Use RMDs (net of any QCD applied against the RMD) toward annual spending first.
         rmd_available_for_income = max(0.0, total_rmd_this_year - qcd_from_rmd)
@@ -218,7 +230,17 @@ def project_with_home_purchase(
         else:
             year["home_purchase"] = False
 
-        taxable_ira_withdrawal = max(0.0, total_rmd_this_year - qcd_from_rmd) + from_ira_spending + home_from_ira
+        ira_withdrawal_gross = max(0.0, total_rmd_this_year - qcd_from_rmd) + from_ira_spending + home_from_ira
+        if ira_basis > 0.0 and ira_withdrawal_gross > 0.0 and ira_after_qcd > 0.0:
+            taxable_ira_withdrawal, _, ira_basis = allocate_ira_basis_pro_rata(
+                ira_balance=ira_after_qcd,
+                basis_remaining=ira_basis,
+                amount=ira_withdrawal_gross,
+            )
+        else:
+            taxable_ira_withdrawal = ira_withdrawal_gross
+
+        ira_after_qcd_and_withdrawals = max(0.0, ira_after_qcd - ira_withdrawal_gross)
         total_ira_outflow = total_rmd_this_year + from_ira_spending + home_from_ira + qcd_extra
 
         # Compute SS taxable (without conversion) and base taxable income.
@@ -237,6 +259,7 @@ def project_with_home_purchase(
 
         # Conversions (tax-aware, still simplified: aim for ≤24% by default).
         conversion = 0.0
+        taxable_conversion_income = 0.0
         conversion_tax = 0.0
         if yr < int(conversion_years) and float(max_annual_conv) > 0:
             # Available to pay conversion tax from taxable after spending + home.
@@ -262,17 +285,32 @@ def project_with_home_purchase(
             room_in_24 = max(0.0, float(ceiling_24) - base_ordinary_taxable_income)
             max_affordable = available_for_conv_tax / mr if mr > 0 else 0.0
 
-            conversion = min(float(max_annual_conv), room_in_24, max_affordable, max(0.0, ira - total_ira_outflow))
+            taxable_fraction = 1.0
+            if ira_after_qcd_and_withdrawals > 0.0 and ira_basis > 0.0:
+                taxable_fraction = max(0.0, (ira_after_qcd_and_withdrawals - ira_basis) / ira_after_qcd_and_withdrawals)
+
+            gross_room = room_in_24 / taxable_fraction if taxable_fraction > 0.0 else max(0.0, ira_after_qcd_and_withdrawals)
+            gross_affordable = max_affordable / taxable_fraction if taxable_fraction > 0.0 else max(0.0, ira_after_qcd_and_withdrawals)
+
+            conversion = min(float(max_annual_conv), gross_room, gross_affordable, max(0.0, ira_after_qcd_and_withdrawals))
             conversion = max(0.0, conversion)
 
             if conversion > 0:
+                taxable_conversion_income = conversion
+                if ira_basis > 0.0 and ira_after_qcd_and_withdrawals > 0.0:
+                    taxable_conversion_income, _, ira_basis = allocate_ira_basis_pro_rata(
+                        ira_balance=ira_after_qcd_and_withdrawals,
+                        basis_remaining=ira_basis,
+                        amount=conversion,
+                    )
+
                 ss_taxable_with_conv = taxable_social_security(
                     total_benefits=total_ss,
-                    other_income=taxable_ira_withdrawal + conversion,
+                    other_income=taxable_ira_withdrawal + taxable_conversion_income,
                     filing_status=filing_status,
                 )
                 conversion_tax = calculate_tax_federal_ltcg_qd_simple(
-                    ordinary_income=float(ss_taxable_with_conv) + float(taxable_ira_withdrawal) + float(conversion),
+                    ordinary_income=float(ss_taxable_with_conv) + float(taxable_ira_withdrawal) + float(taxable_conversion_income),
                     qualified_dividends=float(qualified_dividends),
                     long_term_capital_gains=float(long_term_capital_gains),
                     deduction=float(deduction),
@@ -291,15 +329,15 @@ def project_with_home_purchase(
         # Income tax after conversion.
         ss_taxable_final = taxable_social_security(
             total_benefits=total_ss,
-            other_income=taxable_ira_withdrawal + conversion,
+            other_income=taxable_ira_withdrawal + taxable_conversion_income,
             filing_status=filing_status,
         )
         total_taxable_income = max(
             0.0,
-            (ss_taxable_final + taxable_ira_withdrawal + conversion + qualified_dividends + long_term_capital_gains) - float(deduction),
+            (ss_taxable_final + taxable_ira_withdrawal + taxable_conversion_income + qualified_dividends + long_term_capital_gains) - float(deduction),
         )
         income_tax = calculate_tax_federal_ltcg_qd_simple(
-            ordinary_income=float(ss_taxable_final) + float(taxable_ira_withdrawal) + float(conversion),
+            ordinary_income=float(ss_taxable_final) + float(taxable_ira_withdrawal) + float(taxable_conversion_income),
             qualified_dividends=float(qualified_dividends),
             long_term_capital_gains=float(long_term_capital_gains),
             deduction=float(deduction),
@@ -330,7 +368,7 @@ def project_with_home_purchase(
         medicare_part_b_base_cost = 0.0
         magi_current_year = (
             float(taxable_ira_withdrawal)
-            + float(conversion)
+            + float(taxable_conversion_income)
             + float(ss_taxable_final)
             + float(qualified_dividends)
             + float(long_term_capital_gains)

@@ -14,6 +14,7 @@ from .npv import npv
 from .heirs import simulate_inherited_distribution_after_tax, simulate_inherited_roth_after_tax
 from .niit import calculate_niit
 from .roth_rules import RothLedger
+from .ira_basis import allocate_ira_basis_pro_rata
 
 
 STANDARD_DEDUCTION_MFJ_APPROX_2025 = 30_000.0
@@ -47,6 +48,7 @@ def project_with_tax_tracking(
     ira = float(inputs.total_pretax)
     roth = float(inputs.total_roth)
     taxable = float(inputs.joint.taxable_accounts)
+    ira_basis = float(getattr(inputs.joint, "ira_after_tax_basis", 0.0))
 
     roth_ledger = RothLedger(basis_remaining=float(roth), buckets=[])
 
@@ -123,7 +125,8 @@ def project_with_tax_tracking(
         if bool(charity.enabled) and float(charity.annual_amount) > 0:
             charity_need = float(charity.annual_amount) * inflation_multiplier
             if bool(charity.use_qcd):
-                eligible = (spouse1_age >= int(charity.qcd_eligible_age)) or (spouse2_age >= int(charity.qcd_eligible_age))
+                eligible_age = float(charity.qcd_eligible_age)
+                eligible = (float(spouse1_age) >= eligible_age) or (float(spouse2_age) >= eligible_age)
                 if eligible:
                     covered_people = 2 if filing_status == "MFJ" else 1
                     cap = float(charity.qcd_annual_cap_per_person) * float(covered_people)
@@ -141,6 +144,17 @@ def project_with_tax_tracking(
 
         qcd_from_rmd = min(qcd, total_rmd) if total_rmd > 0 else 0.0
         qcd_extra = max(0.0, qcd - qcd_from_rmd)
+
+        # Pro-rata basis allocation: treat QCD as an IRA distribution that can consume basis.
+        # QCD is excluded from income regardless, so we only use it to reduce remaining basis.
+        ira_after_qcd = ira
+        if ira_basis > 0.0 and qcd > 0.0 and ira > 0.0:
+            _, _, ira_basis = allocate_ira_basis_pro_rata(
+                ira_balance=ira,
+                basis_remaining=ira_basis,
+                amount=qcd,
+            )
+            ira_after_qcd = max(0.0, ira - qcd)
 
         rmd_available_for_income = max(0.0, total_rmd - qcd_from_rmd)
         rmd_for_income = min(rmd_available_for_income, from_savings_needed)
@@ -172,7 +186,17 @@ def project_with_tax_tracking(
 
         from_ira_extra = max(0.0, remaining_need - from_taxable - from_roth)
 
-        taxable_ira_withdrawal = max(0.0, total_rmd - qcd_from_rmd) + from_ira_extra
+        ira_withdrawal_gross = max(0.0, total_rmd - qcd_from_rmd) + from_ira_extra
+        if ira_basis > 0.0 and ira_withdrawal_gross > 0.0 and ira_after_qcd > 0.0:
+            taxable_ira_withdrawal, _, ira_basis = allocate_ira_basis_pro_rata(
+                ira_balance=ira_after_qcd,
+                basis_remaining=ira_basis,
+                amount=ira_withdrawal_gross,
+            )
+        else:
+            taxable_ira_withdrawal = ira_withdrawal_gross
+
+        ira_after_qcd_and_withdrawals = max(0.0, ira_after_qcd - ira_withdrawal_gross)
         total_ira_outflow = total_rmd + from_ira_extra + qcd_extra
 
         taxable_balance_for_nii = max(0.0, taxable - from_taxable)
@@ -206,6 +230,7 @@ def project_with_tax_tracking(
 
         # Conversions
         conversion = 0.0
+        taxable_conversion_income = 0.0
         conversion_tax = 0.0
         if yr < int(strategy.conversion_years) and float(strategy.annual_conversion) > 0:
             available_for_conv_tax = max(0.0, taxable - float(inputs.plan.minimum_cash_reserve) - from_taxable)
@@ -227,21 +252,45 @@ def project_with_tax_tracking(
 
             # Notebook used 0.28 here for max_affordable
             max_affordable = (available_for_conv_tax / 0.28) if available_for_conv_tax > 0 else 0.0
-            conversion = min(float(strategy.annual_conversion), room_in_brackets, max_affordable, max(0.0, ira - total_ira_outflow))
+
+            # If the household has after-tax basis in IRA, only the taxable portion counts toward brackets.
+            taxable_fraction = 1.0
+            if ira_after_qcd_and_withdrawals > 0.0 and ira_basis > 0.0:
+                taxable_fraction = max(0.0, (ira_after_qcd_and_withdrawals - ira_basis) / ira_after_qcd_and_withdrawals)
+
+            gross_room = room_in_brackets / taxable_fraction if taxable_fraction > 0.0 else max(0.0, ira_after_qcd_and_withdrawals)
+            gross_affordable = max_affordable / taxable_fraction if taxable_fraction > 0.0 else max(0.0, ira_after_qcd_and_withdrawals)
+
+            conversion = min(
+                float(strategy.annual_conversion),
+                gross_room,
+                gross_affordable,
+                max(0.0, ira_after_qcd_and_withdrawals),
+            )
             conversion = max(0.0, conversion)
 
             if conversion > 0:
+                taxable_conversion_income = conversion
+                if ira_basis > 0.0 and conversion > 0.0 and ira_after_qcd_and_withdrawals > 0.0:
+                    taxable_conversion_income, _, ira_basis = allocate_ira_basis_pro_rata(
+                        ira_balance=ira_after_qcd_and_withdrawals,
+                        basis_remaining=ira_basis,
+                        amount=conversion,
+                    )
+
                 ss_taxable_with_conv = taxable_social_security(
                     total_benefits=total_ss,
-                    other_income=taxable_ira_withdrawal + conversion,
+                    other_income=taxable_ira_withdrawal + taxable_conversion_income,
                     filing_status=filing_status,
                 )
-                taxable_income_with_conv = max(0.0, ss_taxable_with_conv + taxable_ira_withdrawal + conversion - float(standard_deduction))
+                taxable_income_with_conv = max(
+                    0.0, ss_taxable_with_conv + taxable_ira_withdrawal + taxable_conversion_income - float(standard_deduction)
+                )
                 taxable_income_no_conv = max(0.0, ss_taxable_no_conv + taxable_ira_withdrawal - float(standard_deduction))
 
                 # Full tax difference, including the effect of conversions pushing LTCG/QD into higher rate brackets.
                 conversion_tax = calculate_tax_federal_ltcg_qd_simple(
-                    ordinary_income=float(ss_taxable_with_conv) + float(taxable_ira_withdrawal) + float(conversion),
+                    ordinary_income=float(ss_taxable_with_conv) + float(taxable_ira_withdrawal) + float(taxable_conversion_income),
                     qualified_dividends=float(qualified_dividends),
                     long_term_capital_gains=float(long_term_capital_gains),
                     deduction=float(deduction),
@@ -266,11 +315,11 @@ def project_with_tax_tracking(
         # Income tax after conversion decision.
         ss_taxable_final = taxable_social_security(
             total_benefits=total_ss,
-            other_income=taxable_ira_withdrawal + conversion,
+            other_income=taxable_ira_withdrawal + taxable_conversion_income,
             filing_status=filing_status,
         )
         income_tax = calculate_tax_federal_ltcg_qd_simple(
-            ordinary_income=float(ss_taxable_final) + float(taxable_ira_withdrawal) + float(conversion),
+            ordinary_income=float(ss_taxable_final) + float(taxable_ira_withdrawal) + float(taxable_conversion_income),
             qualified_dividends=float(qualified_dividends),
             long_term_capital_gains=float(long_term_capital_gains),
             deduction=float(deduction),
@@ -280,7 +329,7 @@ def project_with_tax_tracking(
 
         total_taxable_income = max(
             0.0,
-            (ss_taxable_final + taxable_ira_withdrawal + conversion + qualified_dividends + long_term_capital_gains) - float(deduction),
+            (ss_taxable_final + taxable_ira_withdrawal + taxable_conversion_income + qualified_dividends + long_term_capital_gains) - float(deduction),
         )
 
         state_tax = 0.0
@@ -290,7 +339,7 @@ def project_with_tax_tracking(
             # IRA withdrawals + conversions + taxable SS + (realized) investment income.
             agi_approx = (
                 float(taxable_ira_withdrawal)
-                + float(conversion)
+                + float(taxable_conversion_income)
                 + float(ss_taxable_final)
                 + float(qualified_dividends)
                 + float(long_term_capital_gains)
@@ -309,7 +358,7 @@ def project_with_tax_tracking(
         # Persist MAGI estimate for lookback calculations.
         magi_current_year = (
             float(taxable_ira_withdrawal)
-            + float(conversion)
+            + float(taxable_conversion_income)
             + float(ss_taxable_final)
             + float(qualified_dividends)
             + float(long_term_capital_gains)
@@ -574,6 +623,7 @@ def project_path(
     ira = float(inputs.total_pretax)
     roth = float(inputs.total_roth)
     taxable = float(inputs.joint.taxable_accounts)
+    ira_basis = float(getattr(inputs.joint, "ira_after_tax_basis", 0.0))
 
     roth_ledger = RothLedger(basis_remaining=float(roth), buckets=[])
 
@@ -630,7 +680,8 @@ def project_path(
         if bool(charity.enabled) and float(charity.annual_amount) > 0:
             charity_need = float(charity.annual_amount) * inflation_multiplier
             if bool(charity.use_qcd):
-                eligible = (spouse1_age >= int(charity.qcd_eligible_age)) or (spouse2_age >= int(charity.qcd_eligible_age))
+                eligible_age = float(charity.qcd_eligible_age)
+                eligible = (float(spouse1_age) >= eligible_age) or (float(spouse2_age) >= eligible_age)
                 if eligible:
                     covered_people = 2 if filing_status == "MFJ" else 1
                     cap = float(charity.qcd_annual_cap_per_person) * float(covered_people)
@@ -646,6 +697,15 @@ def project_path(
 
         qcd_from_rmd = min(qcd, total_rmd) if total_rmd > 0 else 0.0
         qcd_extra = max(0.0, qcd - qcd_from_rmd)
+
+        ira_after_qcd = ira
+        if ira_basis > 0.0 and qcd > 0.0 and ira > 0.0:
+            _, _, ira_basis = allocate_ira_basis_pro_rata(
+                ira_balance=ira,
+                basis_remaining=ira_basis,
+                amount=qcd,
+            )
+            ira_after_qcd = max(0.0, ira - qcd)
 
         rmd_available_for_income = max(0.0, total_rmd - qcd_from_rmd)
         rmd_for_income = min(rmd_available_for_income, from_savings_needed)
@@ -673,7 +733,17 @@ def project_path(
             from_roth = from_roth_requested
 
         from_ira_extra = max(0.0, remaining_need - from_taxable - from_roth)
-        taxable_ira_withdrawal = max(0.0, total_rmd - qcd_from_rmd) + from_ira_extra
+        ira_withdrawal_gross = max(0.0, total_rmd - qcd_from_rmd) + from_ira_extra
+        if ira_basis > 0.0 and ira_withdrawal_gross > 0.0 and ira_after_qcd > 0.0:
+            taxable_ira_withdrawal, _, ira_basis = allocate_ira_basis_pro_rata(
+                ira_balance=ira_after_qcd,
+                basis_remaining=ira_basis,
+                amount=ira_withdrawal_gross,
+            )
+        else:
+            taxable_ira_withdrawal = ira_withdrawal_gross
+
+        ira_after_qcd_and_withdrawals = max(0.0, ira_after_qcd - ira_withdrawal_gross)
         total_ira_outflow = total_rmd + from_ira_extra + qcd_extra
 
         taxable_balance_for_nii = max(0.0, taxable - from_taxable)
@@ -696,6 +766,7 @@ def project_path(
             long_term_capital_gains = float(inputs.preferential_income.long_term_capital_gains_annual) * inflation_multiplier
 
         conversion = 0.0
+        taxable_conversion_income = 0.0
         conversion_tax = 0.0
         if yr < int(conversion_years) and float(annual_conversion) > 0:
             available_for_conv_tax = max(0.0, taxable - float(inputs.plan.minimum_cash_reserve) - from_taxable)
@@ -720,18 +791,33 @@ def project_path(
             room_in_24 = max(0.0, float(ceiling_24) - base_ordinary_taxable_income)
             max_affordable = available_for_conv_tax / mr if mr > 0 else 0.0
 
-            conversion = min(float(annual_conversion), room_in_24, max_affordable, max(0.0, ira - total_ira_outflow))
+            taxable_fraction = 1.0
+            if ira_after_qcd_and_withdrawals > 0.0 and ira_basis > 0.0:
+                taxable_fraction = max(0.0, (ira_after_qcd_and_withdrawals - ira_basis) / ira_after_qcd_and_withdrawals)
+
+            gross_room = room_in_24 / taxable_fraction if taxable_fraction > 0.0 else max(0.0, ira_after_qcd_and_withdrawals)
+            gross_affordable = max_affordable / taxable_fraction if taxable_fraction > 0.0 else max(0.0, ira_after_qcd_and_withdrawals)
+
+            conversion = min(float(annual_conversion), gross_room, gross_affordable, max(0.0, ira_after_qcd_and_withdrawals))
             conversion = max(0.0, conversion)
 
             if conversion > 0:
+                taxable_conversion_income = conversion
+                if ira_basis > 0.0 and ira_after_qcd_and_withdrawals > 0.0:
+                    taxable_conversion_income, _, ira_basis = allocate_ira_basis_pro_rata(
+                        ira_balance=ira_after_qcd_and_withdrawals,
+                        basis_remaining=ira_basis,
+                        amount=conversion,
+                    )
+
                 ss_taxable_with_conv = taxable_social_security(
                     total_benefits=total_ss,
-                    other_income=taxable_ira_withdrawal + conversion,
+                    other_income=taxable_ira_withdrawal + taxable_conversion_income,
                     filing_status=filing_status,
                 )
 
                 conversion_tax = calculate_tax_federal_ltcg_qd_simple(
-                    ordinary_income=float(ss_taxable_with_conv) + float(taxable_ira_withdrawal) + float(conversion),
+                    ordinary_income=float(ss_taxable_with_conv) + float(taxable_ira_withdrawal) + float(taxable_conversion_income),
                     qualified_dividends=float(qualified_dividends),
                     long_term_capital_gains=float(long_term_capital_gains),
                     deduction=float(deduction),
@@ -753,15 +839,15 @@ def project_path(
 
         ss_taxable_final = taxable_social_security(
             total_benefits=total_ss,
-            other_income=taxable_ira_withdrawal + conversion,
+            other_income=taxable_ira_withdrawal + taxable_conversion_income,
             filing_status=filing_status,
         )
         total_taxable_income = max(
             0.0,
-            (ss_taxable_final + taxable_ira_withdrawal + conversion + qualified_dividends + long_term_capital_gains) - float(deduction),
+            (ss_taxable_final + taxable_ira_withdrawal + taxable_conversion_income + qualified_dividends + long_term_capital_gains) - float(deduction),
         )
         income_tax = calculate_tax_federal_ltcg_qd_simple(
-            ordinary_income=float(ss_taxable_final) + float(taxable_ira_withdrawal) + float(conversion),
+            ordinary_income=float(ss_taxable_final) + float(taxable_ira_withdrawal) + float(taxable_conversion_income),
             qualified_dividends=float(qualified_dividends),
             long_term_capital_gains=float(long_term_capital_gains),
             deduction=float(deduction),
@@ -774,7 +860,7 @@ def project_path(
             base = str(getattr(inputs.state_tax, "base", "agi"))
             agi_approx = (
                 float(taxable_ira_withdrawal)
-                + float(conversion)
+                + float(taxable_conversion_income)
                 + float(ss_taxable_final)
                 + float(qualified_dividends)
                 + float(long_term_capital_gains)
@@ -795,7 +881,7 @@ def project_path(
         medicare_part_b_base_cost = 0.0
         magi_current_year = (
             float(taxable_ira_withdrawal)
-            + float(conversion)
+            + float(taxable_conversion_income)
             + float(ss_taxable_final)
             + float(qualified_dividends)
             + float(long_term_capital_gains)
