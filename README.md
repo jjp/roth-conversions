@@ -1,12 +1,12 @@
-# roth_conversions
+# roth-conversions
 
 ## Setup Instructions
 
-Follow these steps to set up your environment, install the required packages using `uv`, and use the `.ipynb` files in VS Code.
+Follow these steps to set up your environment and install the required packages using `uv`.
 
 ### Prerequisites
 
-- Python 3.9+ installed and added to your PATH
+- Python 3.12+ installed and added to your PATH
 - Visual Studio Code installed with the Python and Jupyter extensions
 
 - `uv` installed globally
@@ -28,35 +28,19 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
 .\.venv\Scripts\Activate.ps1
 ```
 
-### 2. Install Required Packages
+### 2. Sync Packages Using `pyproject.toml`
 
-You can install `uv` and other dependencies using either `pip` or `curl`. Choose the method based on your system setup:
-
-### 3. Sync Packages Using `pyproject.toml`
-
-Ensure that your `pyproject.toml` file specifies the required dependencies. Then, sync the packages into your virtual environment:
+Ensure that your `pyproject.toml` file specifies the required dependencies. Then, install them into your virtual environment:
 
 ```pwsh
-# Sync packages defined in pyproject.toml
 uv sync
 ```
 
-### 4. Open and Run "retirement_story" `.ipynb` Files in VS Code
-
-1. Open Visual Studio Code.
-2. Install the Python and Jupyter extensions if not already installed.
-3. Open the `.ipynb` file you want to work with.
-4. Select the Python interpreter associated with your virtual environment:
-   - Press `Ctrl+Shift+P` to open the Command Palette.
-   - Search for and select `Python: Select Interpreter`.
-   - Choose the interpreter located in `.venv`.
-5. Run the notebook cells using the `Run` button or `Shift+Enter`.
-
 ### Notebooks
 
-- Started with roth_conversion_optimizer.ibynb
-- Improved with retirement_story.ipynb
-- Currently working on retirement_visual.ipynb
+The primary supported interface is the CLI described below.
+
+Legacy notebooks are kept for exploration and historical context under `notebooks_archive/` (not maintained for interactive use).
 
 ## Library + CLI (non-notebook)
 
@@ -97,11 +81,10 @@ If `uv run retirement-toolkit ...` fails on your machine, you can always run the
 python -m retirement_toolkit.cli roth --config configs/retirement_config.template.toml report --format md --out outputs/report.md
 ```
 
-Compatibility entrypoint (old name; still works):
+Compatibility entrypoint (old CLI name; still works):
 
 ```pwsh
 roth-conversions --config configs/retirement_config.template.toml three-paths
-python -m roth_conversions.cli --config configs/retirement_config.template.toml three-paths
 ```
 
 ### Run all scenarios
