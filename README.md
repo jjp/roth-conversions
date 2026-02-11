@@ -40,13 +40,47 @@ Ensure that your `pyproject.toml` file specifies the required dependencies. Then
 uv sync
 ```
 
-### Notebooks
+### 3. (Optional): PowerShell profile helper for activating the venv
 
-The primary supported interface is the CLI described below.
+This is a PowerShell function you can add to your personal `$PROFILE` so you can activate a repo's venv with a single command. 
 
-Legacy notebooks are kept for exploration and historical context under `notebooks_archive/` (not maintained for interactive use).
+1. Add the function below to your profile file (create it if it does not exist & then restart PowerShell),
+2. Ensure the BasePath reflects your local Git repository location
 
-## Library + CLI (non-notebook)
+```pwsh
+function venv {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$RepoName,
+
+    [string]$BasePath = "$HOME\GitLocal"
+  )
+
+  $repoPath = Join-Path $BasePath $RepoName
+  $activate = Join-Path $repoPath ".venv\Scripts\Activate.ps1"
+
+  if (-not (Test-Path $activate)) {
+    throw "No venv found at $repoPath"
+  }
+
+  Push-Location $repoPath
+  & $activate
+}
+```
+
+Usage:
+
+```pwsh
+venv roth-conversions
+```
+
+### 4. Run unit tests
+
+```pwsh
+python -m unittest discover -s tests -p "test_*.py" -q
+```
+
+## Library + CLI (non-notebook primary interface)
 
 This repo now includes a refactored, library-style package in `roth_conversions/` (no `exec`, no notebook parsing).
 
@@ -60,35 +94,38 @@ Additional notebook-derived config templates (for migration) live at:
 
 ### Run the CLI
 
-Using `uv` (recommended):
+Using `uv` (recommended). Ordered from quickest/simplest to most complex, with each explanation as a code comment:
 
 ```pwsh
-uv run retirement-toolkit roth --config configs/retirement_config.template.toml three-paths
-uv run retirement-toolkit roth --config configs/retirement_config.template.toml 32pct
-uv run retirement-toolkit roth --config configs/retirement_config.template.toml home --down-payment 200000 --purchase-year 2027
-uv run retirement-toolkit roth --config configs/retirement_config.template.toml report --format md --out outputs/report.md
-uv run retirement-toolkit roth --config configs/retirement_config.template.toml report --format pdf --out outputs/report.pdf
-
-# List available report sections
+# 1) List available report sections (fastest). Discovery step before targeted reports.
 uv run retirement-toolkit roth --config configs/retirement_config.template.toml report --list-sections
 
-# Include only specific sections (keys are shown by --list-sections)
+# 2) Run the baseline three-paths analysis. Quick end-to-end sanity check.
+uv run retirement-toolkit roth --config configs/retirement_config.template.toml three-paths
+
+# 3) Run the 32% bracket conversion path. Compact stress check of tax logic.
+uv run retirement-toolkit roth --config configs/retirement_config.template.toml 32pct
+
+# 4) Run the home purchase scenario. Exercises optional scenario logic.
+uv run retirement-toolkit roth --config configs/retirement_config.template.toml home --down-payment 200000 --purchase-year 2027
+
+# 5) Generate a full Markdown report. Shareable review artifact.
+uv run retirement-toolkit roth --config configs/retirement_config.template.toml report --format md --out outputs/report.md
+
+# 6) Generate a Markdown report with included sections only. Trims output.
 uv run retirement-toolkit roth --config configs/retirement_config.template.toml report --format md --include executive-summary --include three-paths-a-b-c --out outputs/report.md
 
-# Exclude a section
+# 7) Generate a Markdown report excluding a section. Mostly full report, minus a topic.
 uv run retirement-toolkit roth --config configs/retirement_config.template.toml report --format md --exclude home-purchase-scenario --out outputs/report.md
+
+# 8) Generate a full PDF report (most work). Slowest output for finalized deliverable.
+uv run retirement-toolkit roth --config configs/retirement_config.template.toml report --format pdf --out outputs/report.pdf
 ```
 
 If `uv run retirement-toolkit ...` fails on your machine, you can always run the CLI via module execution:
 
 ```pwsh
 python -m retirement_toolkit.cli roth --config configs/retirement_config.template.toml report --format md --out outputs/report.md
-```
-
-Compatibility entrypoint (old CLI name; still works):
-
-```pwsh
-roth-conversions --config configs/retirement_config.template.toml three-paths
 ```
 
 ### Run all scenarios
@@ -128,8 +165,13 @@ Get-ChildItem configs -Filter "retirement_config*.toml" |
   }
 ```
 
-### Run unit tests
+### Archive of devops repo features
 
-```pwsh
-python -m unittest discover -s tests -p "test_*.py" -q
-```
+- Legacy notebooks are kept for exploration and historical context under `notebooks_archive/` (not maintained for interactive use).
+
+- Compatibility entrypoint (old CLI name; no longer works as uv sync doesn't "package" it):
+
+    ```pwsh
+    # for reference - this is how the cli used to be called (in the devops repo)
+    roth-conversions --config configs/retirement_config.template.toml three-paths
+    ```
