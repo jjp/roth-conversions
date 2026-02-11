@@ -10,9 +10,13 @@ Follow these steps to set up your environment and install the required packages 
 - Visual Studio Code installed with the Python and Jupyter extensions
 
 - `uv` installed globally
-  - powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-  - outside of VS Code, from a terminal run "where.exe uv" to confirm the installation
-  - fully exit VS Code and restart (or the uv command will be unfindable)
+
+    ```bash
+    # from your default terminal window (typically bash)
+    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+    ```
+- outside of VS Code, from a terminal run "where.exe uv" to confirm the installation
+- fully exit VS Code and restart (or the uv command will be unfindable)
 
 ### 1. Create and Activate a Virtual Environment Using `uv`
 
