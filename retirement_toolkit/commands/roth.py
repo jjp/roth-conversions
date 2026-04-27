@@ -150,7 +150,7 @@ def add_roth_subcommands(parent_subparsers: argparse._SubParsersAction) -> None:
     p3.add_argument("--horizon-years", type=int, default=25)
     p3.set_defaults(func=cmd_three_paths)
 
-    p32 = sub.add_parser("32pct", help="Run Chapter 9 32% breakeven question")
+    p32 = sub.add_parser("32pct", help="Run Chapter 9 32%% breakeven question")
     p32.set_defaults(func=cmd_32pct)
 
     ph = sub.add_parser("home", help="Run Chapter 8 home purchase scenario")
