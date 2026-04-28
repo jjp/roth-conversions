@@ -25,3 +25,7 @@ build-backend = "hatchling.build"
 [project.scripts]
 roth-conversions = "roth_conversions.cli:main"
 retirement-toolkit = "retirement_toolkit.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["retirement_toolkit", "roth_conversions"]
+
